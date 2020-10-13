@@ -27,16 +27,22 @@ def parse_args(args):
 
 def main(args):
     config = parse_args(args)
-    if config.debug:
-        log_format = "%(filename)s:%(funcName)s:%(lineno)s: %(message)s"
-        logging.basicConfig(level=logging.DEBUG, format=log_format)
+
+    # Set up logger
+    log_format = "%(filename)s:%(funcName)s:%(lineno)s: %(message)s"
+    level = logging.DEBUG if config.debug else logging.INFO
+    logging.basicConfig(level=level, format=log_format)
+
     logging.debug(f"Command line arguments: {args}")
 
+    # Program is run under training mode, images are used to train
     if config.train:
         logging.debug(f"Training mode")
         images = config.images
         outfile = config.train_output
         KNN.make_from_images(images, outfile)
+
+    # Program is otherwise running in classifying mode, images are used for ocr
     else:
         logging.debug(f"Classifying mode")
         if config.classifier.is_file():
@@ -46,6 +52,6 @@ def main(args):
             knn = KNN.make_from_file(classifier)
 
             for image in images:
-                OCR.detect(image, knn)
+                OCR.detect(image, knn, debug=config.debug)
         else:
             logging.error(f"Invalid classifier file: '{config.classifier}'")

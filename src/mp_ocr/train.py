@@ -57,9 +57,7 @@ class KNN:
 
         # Get the connected component
         src_img = cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY)
-        _, src_img = cv2.threshold(
-            src_img, 127, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU
-        )
+        _, src_img = cv2.threshold(src_img, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
         count, labels, stats, _ = cv2.connectedComponentsWithStats(src_img)
 
         # Get the second largest area component
