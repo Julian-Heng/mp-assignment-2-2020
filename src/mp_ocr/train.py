@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import cv2
+import logging
 import numpy as np
 
 from .utils import list_contains_same_elements
@@ -11,8 +12,11 @@ class KNN:
     @staticmethod
     def make_from_images(images, outfile=None):
         """ Makes a knn classifier from image """
+        logging.debug("Making knn from images")
+
         # Validate images:
         #   1. They need to be the same size
+        logging.debug("Checking for resolution")
         res = [i.resolution for i in images]
         if not list_contains_same_elements(res):
             raise TypeError("In order to train images, they need to be the same size")
@@ -21,13 +25,17 @@ class KNN:
         train = np.array([KNN._preprocess_image(i) for i in images])
         labels = np.array([[int(i.parentname)] for i in images])
 
-        if outfile is not None:
+        knn = KNN.make_from_training_data(train, labels)
+
+        if knn and outfile is not None:
+            logging.debug("Writing train and labels to file")
             np.savez(str(outfile), train=train, labels=labels)
 
-        return KNN.make_from_training_data(train, labels)
+        return knn
 
     @staticmethod
     def make_from_file(infile):
+        logging.debug("Loading knn train and labels from '{infile}'")
         with np.load(str(infile)) as data:
             train = data["train"]
             labels = data["labels"]
@@ -41,6 +49,7 @@ class KNN:
 
     @staticmethod
     def _preprocess_image(image):
+        logging.debug(f"Training using image '{image.filename}'")
         src_img = image.image
         res = image.resolution
         area = image.area
