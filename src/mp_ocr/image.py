@@ -10,6 +10,8 @@ class Image:
 
     def __init__(self, filepath):
         self._filepath = Path(filepath)
+        if not self._filepath.exists():
+            raise ValueError(f"Input image '{filepath}' does not exist")
         self._image = cv2.imread(str(self._filepath))
 
     def __str__(self):

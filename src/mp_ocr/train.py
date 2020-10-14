@@ -35,7 +35,7 @@ class KNN:
 
     @staticmethod
     def make_from_file(infile):
-        logging.debug("Loading knn train and labels from '{infile}'")
+        logging.debug(f"Loading knn train and labels from '{infile}'")
         with np.load(str(infile)) as data:
             train = data["train"]
             labels = data["labels"]

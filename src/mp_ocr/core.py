@@ -5,10 +5,7 @@ import logging
 from pathlib import Path
 from argparse import ArgumentParser
 
-from . import utils
-from .image import Image
-from .train import KNN
-from .ocr import OCR
+from . import image, ocr, train, utils
 
 
 def parse_args(args):
@@ -20,7 +17,7 @@ def parse_args(args):
     )
     parser.add_argument("-c", "--classifier", action="store", type=Path, metavar="path")
     parser.add_argument("-d", "--debug", action="store_true", default=False)
-    parser.add_argument("images", nargs="+", action="store", type=Image)
+    parser.add_argument("images", nargs="+", action="store", type=image.Image)
 
     return parser.parse_args(args)
 
@@ -40,7 +37,7 @@ def main(args):
         logging.debug(f"Training mode")
         images = config.images
         outfile = config.train_output
-        KNN.make_from_images(images, outfile)
+        train.KNN.make_from_images(images, outfile)
 
     # Program is otherwise running in classifying mode, images are used for ocr
     else:
@@ -49,9 +46,9 @@ def main(args):
             logging.debug(f"Using classifier file '{config.classifier}'")
             images = config.images
             classifier = config.classifier
-            knn = KNN.make_from_file(classifier)
+            knn = train.KNN.make_from_file(classifier)
 
             for image in images:
-                OCR.detect(image, knn, debug=config.debug)
+                ocr.detect(image, knn, debug=config.debug)
         else:
             logging.error(f"Invalid classifier file: '{config.classifier}'")
