@@ -179,14 +179,17 @@ def _is_good_contour(contour, height, width, area):
     x_coords = _approx[:, 0]
     y_coords = _approx[:, 1]
 
-    # Filter any contours where the height is less than the width
-    if h < w:
+    if False:
+        pass
+
+    ## Filter any contours where the height is less than the width
+    elif h < w:
         msg = "height is less than width"
 
-    # Filter any contours where the height is less than 1.36 times the
+    # Filter any contours where the height is less than 1.2 times the
     # width
-    elif contour_aspect_ratio < 1.36:
-        msg =  f"contour aspect ratio is less than 1.36 "
+    elif contour_aspect_ratio < 1.2:
+        msg =  f"contour aspect ratio is less than 1.2 "
         msg += f"({contour_aspect_ratio:.5f})"
 
     # Filter any contours where the height is greater than 3.4 times the
@@ -211,16 +214,16 @@ def _is_good_contour(contour, height, width, area):
     elif contour_area < 70:
         msg = f"contour area is less than 70 ({contour_area})"
 
-    # Filter any contours where the area ratio is more than 8% of the
+    # Filter any contours where the area ratio is more than 10% of the
     # image
-    elif contour_area_ratio > 0.08:
-        msg = f"contour image area ratio is more than 0.08 "
+    elif contour_area_ratio > 0.1:
+        msg = f"contour image area ratio is more than 0.1 "
         msg += f"({contour_area_ratio:.5f})"
 
-    # Filter any contours where the area ratio is less than 0.01% of the
+    # Filter any contours where the area ratio is less than 0.012% of the
     # image
-    elif contour_area_ratio < 0.001:
-        msg = f"contour image area ratio is less than 0.001 "
+    elif contour_area_ratio < 0.0012:
+        msg = f"contour image area ratio is less than 0.0012 "
         msg += f"({contour_area_ratio:.5f})"
 
     # Filter any contours where the number of approximated points are less
@@ -252,11 +255,11 @@ def _is_good_contour(contour, height, width, area):
 
 
 def _stage_2_contour_groups_filter(image, contour_groups):
-    # Limit the distance between to the contours to 1/8th of the image
+    # Limit the distance between to the contours to 1/12th of the image
     # hypotenuse
     height = image.height
     width = image.width
-    distance_limit = np.hypot(height, width) // 10
+    distance_limit = np.hypot(height, width) // 12
     logging.debug(f"Distance limit: {distance_limit:.2f}")
 
     filtered_contour_groups = list()
