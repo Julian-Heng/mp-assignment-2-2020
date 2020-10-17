@@ -8,7 +8,7 @@ import time
 
 from itertools import chain, combinations
 
-from . import utils
+from . import utils, colors
 
 
 def detect(image, knn, debug=False):
@@ -20,8 +20,8 @@ def detect(image, knn, debug=False):
     #   5. Detect the number individually
     logging.info(f"Detecting using image '{image.filename}'")
     processed_img = _preprocess_image(image)
-    contours = _extract_contours(processed_img, image)
-    cropped = _crop_contour_group(image, contours)
+    contour_groups = _extract_contours(processed_img, image)
+    crops = _crop_contour_groups(image, contour_groups)
 
     # For debugging purposes
     if debug:
@@ -29,11 +29,20 @@ def detect(image, knn, debug=False):
         cv2.imwrite(f"bin_{image.filename}", processed_img)
 
         img = image.image
-        img = cv2.fillPoly(img, pts=contours, color=(0, 0, 127))
-        img = cv2.drawContours(img, contours, -1, (0, 0, 255), 2)
+        for i, contours in enumerate(contour_groups):
+            group_center = utils.get_contour_group_center(contours)
+            font = cv2.FONT_HERSHEY_SIMPLEX
+
+            img = cv2.fillPoly(img, pts=contours, color=colors.DIM_RED)
+            img = cv2.drawContours(img, contours, -1, colors.RED, 2)
+
+            cv2.putText(img, f"{i}", group_center, font, 1, colors.WHITE, 3, cv2.LINE_AA)
+            cv2.putText(img, f"{i}", group_center, font, 1, colors.BLACK, 2, cv2.LINE_AA)
+
         cv2.imwrite(f"contours_{image.filename}", img)
 
-        cv2.imwrite(f"cropped_{image.filename}", cropped)
+        for i, cropped in enumerate(crops):
+            cv2.imwrite(f"cropped_{i}_{image.filename}", cropped)
 
 
 def _preprocess_image(image):
@@ -61,74 +70,89 @@ def _extract_contours(processed_img, image):
 
     logging.debug(f"No. of contours: {len(contours)}")
 
+    # Convert the contours into a single giant group
+    contour_groups = [contours]
+
     # Start filtering out contours
     stages = {
-        "Stage 1": ("Filtering bad contours", _stage_1_contour_filter),
-        "Stage 2": ("Comparing contours distance", _stage_2_contour_filter),
+        "Stage 1": ("Filtering bad contours", _stage_1_contour_groups_filter),
+        "Stage 2": ("Comparing contours distance", _stage_2_contour_groups_filter),
         "Stage 3": (
             "Comparing contours line straightness",
-            _stage_3_contour_filter,
+            _stage_3_contour_groups_filter,
         ),
     }
 
     # Loop through the stages
     for stage_name, (stage_msg, stage_action) in stages.items():
         logging.debug(f"{stage_name}: {stage_msg}")
-        start = time.time()
-        filtered_contours = stage_action(contours, image)
-        end = time.time()
 
-        delta = len(contours) - len(filtered_contours)
+        before_count = sum(map(len, contour_groups))
+        start = time.time()
+        filtered_contours = stage_action(image, contour_groups)
+        end = time.time()
+        after_count = sum(map(len, filtered_contours))
+
+        delta = before_count - after_count
         elapsed = (end - start) * 1000
 
         msg = f"{stage_name}: Removed {delta} contours, "
-        msg += f"{len(filtered_contours)} remains. ({elapsed:.2f}ms)"
+        msg += f"{after_count} remains. ({elapsed:.2f}ms)"
         logging.debug(msg)
-        contours = filtered_contours
+        contour_groups = filtered_contours
 
-    return contours
+    return contour_groups
 
 
-def _crop_contour_group(image, contours):
+def _crop_contour_groups(image, contour_groups):
     """
     Crop the image to the bounding rectangle of a group of contours
     """
+    cropped_groups = list()
     img = image.image
+    for contours in contour_groups:
+        x1 = sys.maxsize
+        x2 = -sys.maxsize
+        y1 = sys.maxsize
+        y2 = -sys.maxsize
 
-    x1 = sys.maxsize
-    x2 = -sys.maxsize
-    y1 = sys.maxsize
-    y2 = -sys.maxsize
-    for contour in contours:
-        cx1, cy1, cw, ch = cv2.boundingRect(contour)
-        cx2 = cx1 + cw
-        cy2 = cy1 + ch
+        for contour in contours:
+            cx1, cy1, cw, ch = cv2.boundingRect(contour)
+            cx2 = cx1 + cw
+            cy2 = cy1 + ch
 
-        x1 = min(x1, cx1)
-        x2 = max(x2, cx2)
-        y1 = min(y1, cy1)
-        y2 = max(y2, cy2)
+            x1 = min(x1, cx1)
+            x2 = max(x2, cx2)
+            y1 = min(y1, cy1)
+            y2 = max(y2, cy2)
 
-    cropped = img[y1:y2, x1:x2]
-    return cropped
+        cropped = img[y1:y2, x1:x2]
+        cropped_groups.append(cropped)
+    return cropped_groups
 
 
-def _stage_1_contour_filter(contours, image):
+def _stage_1_contour_groups_filter(image, contour_groups):
     height = image.height
     width = image.width
     area = image.area
     border_tolerance = 5
 
-    filtered_contours = list()
-    for i, contour in enumerate(contours):
-        is_good, msg = _is_good_contour(contour, height, width, area)
-        if is_good:
-            logging.debug(f"Contour {i} is good")
-            filtered_contours.append(contour)
-        else:
-            logging.debug(f"Contour {i} filtered: {msg}")
+    filtered_contour_groups = list()
 
-    return filtered_contours
+    for contours in contour_groups:
+        filtered_contours = list()
+        for i, contour in enumerate(contours):
+            is_good, msg = _is_good_contour(contour, height, width, area)
+            if is_good:
+                logging.debug(f"Contour {i} is good")
+                filtered_contours.append(contour)
+            else:
+                logging.debug(f"Contour {i} filtered: {msg}")
+
+        if len(filtered_contours) > 0:
+            filtered_contour_groups.append(filtered_contours)
+
+    return filtered_contour_groups
 
 
 def _is_good_contour(contour, height, width, area):
@@ -143,8 +167,7 @@ def _is_good_contour(contour, height, width, area):
     height_ratio = h / height
     width_ratio = w / width
 
-    epsilon = 0.001 * cv2.arcLength(contour, True)
-    approx = cv2.approxPolyDP(contour, epsilon, True)
+    approx = utils.get_contour_approx(contour)
     num_approx = len(approx)
     _approx = np.squeeze(approx)
 
@@ -194,10 +217,10 @@ def _is_good_contour(contour, height, width, area):
         msg = f"contour image area ratio is more than 0.08 "
         msg += f"({contour_area_ratio:.5f})"
 
-    # Filter any contours where the area ratio is less than 0.0134% of the
+    # Filter any contours where the area ratio is less than 0.01% of the
     # image
-    elif contour_area_ratio < 0.00134:
-        msg = f"contour image area ratio is less than 0.00134 "
+    elif contour_area_ratio < 0.001:
+        msg = f"contour image area ratio is less than 0.001 "
         msg += f"({contour_area_ratio:.5f})"
 
     # Filter any contours where the number of approximated points are less
@@ -228,36 +251,41 @@ def _is_good_contour(contour, height, width, area):
     return is_good, msg
 
 
-def _stage_2_contour_filter(contours, image):
-    # Check if there's more than 1 contour
-    if len(contours) < 2:
-        logging.debug(f"Not enough contours to compare. Skipping...")
-        return contours
+def _stage_2_contour_groups_filter(image, contour_groups):
+    # Limit the distance between to the contours to 1/8th of the image
+    # hypotenuse
+    height = image.height
+    width = image.width
+    distance_limit = np.hypot(height, width) // 8
+    logging.debug(f"Distance limit: {distance_limit:.2f}")
 
+    filtered_contour_groups = list()
+    for contours in contour_groups:
+        groups = _stage_2_contour_group_filter(contours, distance_limit)
+        for group in groups:
+            filtered_contour_groups.append(group)
+    return filtered_contour_groups
+
+
+def _stage_2_contour_group_filter(contours, distance_limit):
     msg_fmt = "Distance between contour {} and {} is good"
     filtered_msg_fmt = (
         "Distance between contour {} and {} is not within the limit ({:.2f})"
     )
 
-    height = image.height
-    width = image.width
+    # Check if there's more than 1 contour
+    if len(contours) < 2:
+        logging.debug(f"Not enough contours in group to compare. Skipping...")
 
-    # Limit the distance between to the contours to 1/8th of the image
-    # hypotenuse
-    distance_limit = np.hypot(height // 8, width // 8)
-    logging.debug(f"Distance limit: {distance_limit:.2f}")
+        # Need to encapsulate the contours within a group
+        return [contours]
 
     # For each possible pairing of contours
     distances = list()
     for i, j in combinations(range(len(contours)), 2):
         # Get the approximated points of the two contours
-        contour_1 = contours[i]
-        epsilon_1 = 0.001 * cv2.arcLength(contour_1, True)
-        approx_1 = cv2.approxPolyDP(contour_1, epsilon_1, True)
-
-        contour_2 = contours[j]
-        epsilon_2 = 0.001 * cv2.arcLength(contour_2, True)
-        approx_2 = cv2.approxPolyDP(contour_2, epsilon_2, True)
+        approx_1 = utils.get_contour_approx(contours[i])
+        approx_2 = utils.get_contour_approx(contours[j])
 
         # Get the smallest possible points between all points of the 2 contour
         # approximates
@@ -301,23 +329,29 @@ def _stage_2_contour_filter(contours, image):
 
     # Convert group indicies to contours
     groups = _map_group_indexes_to_contours(groups, contours)
-
-    # Get the largest contour group
-    largest_group = _largest_contour_group_by_area(groups)
-
-    return largest_group
+    return groups
 
 
-def _stage_3_contour_filter(contours, image):
-    # Check if there's more than 1 contour
-    if len(contours) < 2:
-        logging.debug(f"Not enough contours to compare. Skipping...")
-        return contours
+def _stage_3_contour_groups_filter(image, contour_groups):
+    filtered_contour_groups = list()
+    for contours in contour_groups:
+        groups = _stage_3_contour_group_filter(contours)
+        for group in groups:
+            filtered_contour_groups.append(group)
+    return filtered_contour_groups
 
+def _stage_3_contour_group_filter(contours):
     msg_fmt = "Angle between contour {} and {} is good"
     filtered_msg_fmt = (
         "Angle between contour {} and {} is not in range ({:.2f} degrees)"
     )
+
+    # Check if there's more than 1 contour
+    if len(contours) < 2:
+        logging.debug(f"Not enough contours to compare. Skipping...")
+
+        # Need to encapsulate the contours within a group
+        return [contours]
 
     # Get all the contour centers
     centers = np.array([utils.get_contour_center(i) for i in contours])
@@ -364,11 +398,7 @@ def _stage_3_contour_filter(contours, image):
 
     # Convert group indicies to contours
     groups = _map_group_indexes_to_contours(groups, contours)
-
-    # Get the largest contour group
-    largest_group = _largest_contour_group_by_area(groups)
-
-    return largest_group
+    return groups
 
 
 def _map_group_indexes_to_contours(groups, contours):
@@ -376,14 +406,24 @@ def _map_group_indexes_to_contours(groups, contours):
     Data structure of groups is an array of an array containing a pair of
     ints. The ints are the indexes of the contours array.
     """
+    group_indexes = list()
     mapped_groups = list()
+
+    # Prepare indexes
     for group in groups:
         # Get all of the indexes as a 1d array
         indexes = utils.flatten(group)
         indexes = utils.unique(indexes)
+        indexes.sort()
+        group_indexes.append(indexes)
 
+    # We need to combine any groups that contains the same indexes
+    group_indexes = utils.link_groups(group_indexes)
+
+    for indexes in group_indexes:
         # Map the indexes to the contours array
         mapped_groups.append([contours[i] for i in indexes])
+
     return mapped_groups
 
 

@@ -46,3 +46,32 @@ def get_contour_center(contour):
         return (x, y)
     except ZeroDivisionError:
         return (0, 0)
+
+
+def get_contour_group_center(contours):
+    centers = np.array(list(map(get_contour_center, contours)))
+    return (int(np.average(centers[:, 0])), int(np.average(centers[:, 1])))
+
+
+def get_contour_approx(contour):
+    epsilon = 0.001 * cv2.arcLength(contour, True)
+    approx = cv2.approxPolyDP(contour, epsilon, True)
+    return approx
+
+
+def link_groups(groups):
+    result = groups[:1]
+
+    for group in groups[1:]:
+        merged = False
+        for row in result:
+            if any(i in row for i in group):
+                row += group
+                merged = True
+                break
+
+        if not merged:
+            result.append(group)
+
+    result = [unique(i) for i in result]
+    return result
