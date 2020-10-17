@@ -30,14 +30,19 @@ def detect(image, knn, debug=False):
 
         img = image.image
         for i, contours in enumerate(contour_groups):
-            group_center = utils.get_contour_group_center(contours)
+            x, y, w, h = utils.get_contour_group_bounding_rect(contours)
+            w //= 2
+            h //= 2
+            x += w
+            y += h
+
             font = cv2.FONT_HERSHEY_SIMPLEX
 
             img = cv2.fillPoly(img, pts=contours, color=colors.DIM_RED)
             img = cv2.drawContours(img, contours, -1, colors.RED, 2)
 
-            cv2.putText(img, f"{i}", group_center, font, 1, colors.WHITE, 3, cv2.LINE_AA)
-            cv2.putText(img, f"{i}", group_center, font, 1, colors.BLACK, 2, cv2.LINE_AA)
+            cv2.putText(img, f"{i}", (x, y), font, 1, colors.WHITE, 3, cv2.LINE_AA)
+            cv2.putText(img, f"{i}", (x, y), font, 1, colors.BLACK, 2, cv2.LINE_AA)
 
         cv2.imwrite(f"contours_{image.filename}", img)
 
@@ -113,21 +118,9 @@ def _crop_contour_groups(image, contour_groups):
     cropped_groups = list()
     img = image.image
     for contours in contour_groups:
-        x1 = sys.maxsize
-        x2 = -sys.maxsize
-        y1 = sys.maxsize
-        y2 = -sys.maxsize
-
-        for contour in contours:
-            cx1, cy1, cw, ch = cv2.boundingRect(contour)
-            cx2 = cx1 + cw
-            cy2 = cy1 + ch
-
-            x1 = min(x1, cx1)
-            x2 = max(x2, cx2)
-            y1 = min(y1, cy1)
-            y2 = max(y2, cy2)
-
+        x1, y1, w, h = utils.get_contour_group_bounding_rect(contours)
+        x2 = x1 + w
+        y2 = y1 + h
         cropped = img[y1:y2, x1:x2]
         cropped_groups.append(cropped)
     return cropped_groups

@@ -2,6 +2,7 @@
 
 import cv2
 import itertools
+import sys
 import numpy as np
 
 
@@ -48,9 +49,23 @@ def get_contour_center(contour):
         return (0, 0)
 
 
-def get_contour_group_center(contours):
-    centers = np.array(list(map(get_contour_center, contours)))
-    return (int(np.average(centers[:, 0])), int(np.average(centers[:, 1])))
+def get_contour_group_bounding_rect(contours):
+    x1 = sys.maxsize
+    x2 = -sys.maxsize
+    y1 = sys.maxsize
+    y2 = -sys.maxsize
+
+    for contour in contours:
+        cx1, cy1, cw, ch = cv2.boundingRect(contour)
+        cx2 = cx1 + cw
+        cy2 = cy1 + ch
+
+        x1 = min(x1, cx1)
+        x2 = max(x2, cx2)
+        y1 = min(y1, cy1)
+        y2 = max(y2, cy2)
+
+    return (x1, y1, x2 - x1, y2 - y1)
 
 
 def get_contour_approx(contour):
