@@ -184,7 +184,7 @@ def _is_good_contour(contour, height, width, area):
     # Filter any contours where the height is less than 1.2 times the
     # width
     elif contour_aspect_ratio < 1.2:
-        msg =  f"contour aspect ratio is less than 1.2 "
+        msg = f"contour aspect ratio is less than 1.2 "
         msg += f"({contour_aspect_ratio:.5f})"
 
     # Filter any contours where the height is greater than 3.4 times the
@@ -337,6 +337,7 @@ def _stage_3_contour_groups_filter(image, contour_groups):
         for group in groups:
             filtered_contour_groups.append(group)
     return filtered_contour_groups
+
 
 def _stage_3_contour_group_filter(contours):
     msg_fmt = "Angle between contour {} and {} is good"
