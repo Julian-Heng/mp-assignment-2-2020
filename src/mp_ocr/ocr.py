@@ -256,7 +256,7 @@ def _stage_2_contour_groups_filter(image, contour_groups):
     # hypotenuse
     height = image.height
     width = image.width
-    distance_limit = np.hypot(height, width) // 8
+    distance_limit = np.hypot(height, width) // 10
     logging.debug(f"Distance limit: {distance_limit:.2f}")
 
     filtered_contour_groups = list()
