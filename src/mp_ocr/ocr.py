@@ -89,7 +89,9 @@ def _extract_contours(processed_img, image):
 
         before_count = sum(map(len, contour_groups))
         start = time.time()
+
         filtered_contours = stage_action(image, contour_groups)
+
         end = time.time()
         after_count = sum(map(len, filtered_contours))
 
