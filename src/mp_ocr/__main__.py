@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
+""" Package main """
+
 
 import sys
-from . import core
+from . import mp_ocr
 
 
 if __name__ == "__main__":
-    core.main(sys.argv[1:])
+    mp_ocr.main(sys.argv[1:])

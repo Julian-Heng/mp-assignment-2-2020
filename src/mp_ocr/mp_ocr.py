@@ -37,7 +37,7 @@ def main(args):
         logging.debug(f"Training mode")
         images = config.images
         outfile = config.train_output
-        train.KNN.make_from_images(images, outfile)
+        train.knn.make_from_images(images, outfile)
 
     # Program is otherwise running in classifying mode, images are used for ocr
     else:
@@ -46,7 +46,7 @@ def main(args):
             logging.debug(f"Using classifier file '{config.classifier}'")
             images = config.images
             classifier = config.classifier
-            knn = train.KNN.make_from_file(classifier)
+            knn = train.knn.make_from_file(classifier)
 
             for image in images:
                 ocr.detect(image, knn, debug=config.debug)
