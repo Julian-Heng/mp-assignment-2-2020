@@ -26,7 +26,7 @@ def make_from_images(images, outfile=None):
 
     if knn and outfile is not None:
         logging.debug("Writing train and labels to file")
-        np.savez(str(outfile), train=train, labels=labels)
+        np.savez(str(outfile), train=train, labels=labels, res=res[0])
 
     return knn
 
@@ -36,7 +36,8 @@ def make_from_file(infile):
     with np.load(str(infile)) as data:
         train = data["train"]
         labels = data["labels"]
-        return make_from_training_data(train, labels)
+        res = data["res"]
+        return make_from_training_data(train, labels), res
 
 
 def make_from_training_data(train, labels):

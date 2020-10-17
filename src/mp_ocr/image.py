@@ -29,6 +29,14 @@ class Image:
         return self._filepath.name
 
     @property
+    def filename_without_extension(self):
+        return self._filepath.stem
+
+    @property
+    def extension(self):
+        return self._filepath.suffix
+
+    @property
     def parentname(self):
         return self._filepath.parent.name
 

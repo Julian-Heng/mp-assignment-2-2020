@@ -11,7 +11,7 @@ from itertools import chain, combinations
 from . import utils, colors
 
 
-def detect(image, knn, debug=False):
+def detect(image, knn, knn_res, debug=False):
     # General steps are:
     #   1. Process the image
     #   2. Try and get the contours for the numbers
@@ -19,40 +19,28 @@ def detect(image, knn, debug=False):
     #   4. Perform contours one more time to get the numbers separately <- might change
     #   5. Detect the number individually
     logging.info(f"Detecting using image '{image.filename}'")
-    processed_img = _preprocess_image(image)
+    processed_img = _preprocess_image(image.image)
     contour_groups = _extract_contours(processed_img, image)
     crops = _crop_contour_groups(image, contour_groups)
 
+    if len(contour_groups) == 0:
+        logging.info(f"Unable to detect any contours!!")
+        return
+
+    i, contours = _largest_contour_group_by_area(contour_groups)
+    crop = crops[i]
+    digits = _detect_digits(image, crop, knn, knn_res, debug)
+    logging.debug(f"Detected digits: {digits}")
+
+    _write_results(image, contours, crop, digits)
+
     # For debugging purposes
     if debug:
-        cv2.imwrite(f"orig_{image.filename}", image.image)
-        cv2.imwrite(f"bin_{image.filename}", processed_img)
-
-        img = image.image
-        for i, contours in enumerate(contour_groups):
-            x, y, w, h = utils.get_contour_group_bounding_rect(contours)
-            w //= 2
-            h //= 2
-            x += w
-            y += h
-
-            font = cv2.FONT_HERSHEY_SIMPLEX
-
-            img = cv2.fillPoly(img, pts=contours, color=colors.DIM_RED)
-            img = cv2.drawContours(img, contours, -1, colors.RED, 2)
-
-            cv2.putText(img, f"{i}", (x, y), font, 1, colors.WHITE, 3, cv2.LINE_AA)
-            cv2.putText(img, f"{i}", (x, y), font, 1, colors.BLACK, 2, cv2.LINE_AA)
-
-        cv2.imwrite(f"contours_{image.filename}", img)
-
-        for i, cropped in enumerate(crops):
-            cv2.imwrite(f"cropped_{i}_{image.filename}", cropped)
+        _write_results_debug(image, processed_img, contour_groups, crops)
 
 
-def _preprocess_image(image):
+def _preprocess_image(img):
     logging.debug("Performing image preprocessing...")
-    img = image.image
 
     # Apply gaussian blur
     img = cv2.GaussianBlur(img, (5, 5), 0)
@@ -108,6 +96,12 @@ def _extract_contours(processed_img, image):
         logging.debug(msg)
         contour_groups = filtered_contours
 
+    # Remove any contours that's within another contour
+    contour_groups = [utils.remove_inner_contours(i) for i in contour_groups]
+
+    # Sort the contours by x coordinate
+    contour_groups = [utils.sort_contours_by_x_coord(i) for i in contour_groups]
+
     return contour_groups
 
 
@@ -124,6 +118,97 @@ def _crop_contour_groups(image, contour_groups):
         cropped = img[y1:y2, x1:x2]
         cropped_groups.append(cropped)
     return cropped_groups
+
+
+def _detect_digits(image, crop, knn, knn_res, debug=False):
+    img = _preprocess_image(crop)
+    count, labels = cv2.connectedComponents(img)
+
+    components = list()
+    components_coords = list()
+    for label in range(1, count):
+        mask = np.array(labels, dtype=np.uint8)
+        mask[labels == label] = 255
+        mask[labels != label] = 0
+
+        coords = cv2.boundingRect(mask)
+
+        components.append(mask)
+        components_coords.append(coords)
+
+    components, components_coords = zip(
+        *sorted(zip(components, components_coords), key=lambda x: x[1][0])
+    )
+
+    digits = list()
+    for component, coords in zip(components, components_coords):
+        x, y, w, h = coords
+        component = component[y : y + h, x : x + w]
+
+        component = cv2.copyMakeBorder(
+            component, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
+        )
+
+        component = cv2.resize(
+            component, tuple(knn_res[::-1]), interpolation=cv2.INTER_NEAREST
+        )
+
+        """
+        if debug:
+            cv2.imshow(image.filename, component)
+            cv2.waitKey(0)
+            cv2.destroyAllWindows()
+            """
+
+        component = component.reshape(-1, np.prod(knn_res)).astype(np.float32)
+
+        ret, result, neighbour, dist = knn.findNearest(component, k=1)
+        digits.append(str(int(ret)))
+
+    return "".join(digits)
+
+
+def _write_results(image, contours, crop, digits):
+    fname = image.filename_without_extension
+    ext = image.extension
+    box = utils.get_contour_group_bounding_rect(contours)
+
+    logging.info(f"Writing 'DetectedArea_{fname}{ext}'")
+    cv2.imwrite(f"DetectedArea_{fname}{ext}", crop)
+
+    logging.info(f"Writing 'BoundingBox_{fname}.txt'")
+    with open(f"BoundingBox_{fname}.txt", "w") as f:
+        f.write(str(box))
+
+    logging.info(f"Writing 'House_{fname}.txt'")
+    with open(f"House_{fname}.txt", "w") as f:
+        f.write(f"Building {digits}")
+
+
+def _write_results_debug(image, processed_img, contour_groups, crops):
+    img = image.image
+    cv2.imwrite(f"DEBUG_orig_{image.filename}", img)
+    cv2.imwrite(f"DEBUG_bin_{image.filename}", processed_img)
+
+    for i, contours in enumerate(contour_groups):
+        x, y, w, h = utils.get_contour_group_bounding_rect(contours)
+        w //= 2
+        h //= 2
+        x += w
+        y += h
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+
+        img = cv2.fillPoly(img, pts=contours, color=colors.DIM_RED)
+        img = cv2.drawContours(img, contours, -1, colors.RED, 2)
+
+        cv2.putText(img, f"{i}", (x, y), font, 1, colors.WHITE, 3, cv2.LINE_AA)
+        cv2.putText(img, f"{i}", (x, y), font, 1, colors.BLACK, 2, cv2.LINE_AA)
+
+    cv2.imwrite(f"DEBUG_contours_{image.filename}", img)
+
+    for i, cropped in enumerate(crops):
+        cv2.imwrite(f"DEBUG_cropped_{i}_{image.filename}", cropped)
 
 
 def _stage_1_contour_groups_filter(image, contour_groups):
@@ -174,12 +259,14 @@ def _is_good_contour(contour, height, width, area):
     x_coords = _approx[:, 0]
     y_coords = _approx[:, 1]
 
+    # Dummy condition
     if False:
         pass
 
     ## Filter any contours where the height is less than the width
     elif h < w:
-        msg = "height is less than width"
+        msg = "height is less than width "
+        msg += f"(h: {h}, w: {w})"
 
     # Filter any contours where the height is less than 1.2 times the
     # width
@@ -215,7 +302,7 @@ def _is_good_contour(contour, height, width, area):
         msg = f"contour image area ratio is more than 0.1 "
         msg += f"({contour_area_ratio:.5f})"
 
-    # Filter any contours where the area ratio is less than 0.012% of the
+    # Filter any contours where the area ratio is less than 0.12% of the
     # image
     elif contour_area_ratio < 0.0012:
         msg = f"contour image area ratio is less than 0.0012 "
@@ -435,5 +522,6 @@ def _largest_contour_group_by_area(groups):
     _map_group_indexes_to_contours.
     """
     areas = np.array([sum([cv2.contourArea(i) for i in g]) for g in groups])
-    largest_group = groups[np.argmax(areas)]
-    return largest_group
+    index = np.argmax(areas)
+    largest_group = groups[index]
+    return index, largest_group

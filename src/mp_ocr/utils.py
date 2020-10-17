@@ -2,8 +2,8 @@
 
 import cv2
 import itertools
-import sys
 import numpy as np
+import sys
 
 
 def list_contains_same_elements(_list):
@@ -90,3 +90,44 @@ def link_groups(groups):
 
     result = [unique(i) for i in result]
     return result
+
+
+def sort_contours_by_x_coord(contours):
+    # From: https://www.pyimagesearch.com/2015/04/20/sorting-contours-using-python-and-opencv/
+    # Acessed 17/10/2020
+
+    if len(contours) == 1:
+        return contours
+
+    boxes = [cv2.boundingRect(i) for i in contours]
+    sort, _ = zip(*sorted(zip(contours, boxes), key=lambda x: x[1][0]))
+    return sort
+
+
+def remove_inner_contours(contours):
+    if len(contours) == 1:
+        return contours
+
+    filtered_contours = list()
+    boxes = [cv2.boundingRect(i) for i in contours]
+
+    for i in range(len(boxes)):
+        check = True
+        for j in range(len(boxes)):
+            if i == j:
+                continue
+            elif is_rect_inside_rect(boxes[i], boxes[j]):
+                check = False
+                break
+
+        if check:
+            filtered_contours.append(contours[i])
+
+    return filtered_contours
+
+
+def is_rect_inside_rect(rect_1, rect_2):
+    x1, y1, w1, h1 = rect_1
+    x2, y2, w2, h2 = rect_2
+
+    return x1 >= x2 and y1 >= y2 and (x1 + w1) <= (x2 + w2) and (y1 + h1) <= (y2 + h2)

@@ -2,8 +2,8 @@
 
 import logging
 
-from pathlib import Path
 from argparse import ArgumentParser
+from pathlib import Path
 
 from . import image, ocr, train, utils
 
@@ -32,23 +32,24 @@ def main(args):
 
     logging.debug(f"Command line arguments: {args}")
 
-    # Program is run under training mode, images are used to train
     if config.train:
+        # Program is run under training mode, images are used to train
         logging.debug(f"Training mode")
         images = config.images
         outfile = config.train_output
         train.knn.make_from_images(images, outfile)
 
-    # Program is otherwise running in classifying mode, images are used for ocr
     else:
+        # Program is otherwise running in classifying mode, images are used for
+        # ocr
         logging.debug(f"Classifying mode")
         if config.classifier.is_file():
             logging.debug(f"Using classifier file '{config.classifier}'")
             images = config.images
             classifier = config.classifier
-            knn = train.knn.make_from_file(classifier)
+            knn, res = train.knn.make_from_file(classifier)
 
             for image in images:
-                ocr.detect(image, knn, debug=config.debug)
+                ocr.detect(image, knn, res, debug=config.debug)
         else:
             logging.error(f"Invalid classifier file: '{config.classifier}'")
