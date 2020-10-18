@@ -2,8 +2,8 @@
 
 """ Package main """
 
-
 import sys
+
 from . import mp_ocr
 
 

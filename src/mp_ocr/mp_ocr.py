@@ -5,7 +5,7 @@ import logging
 from argparse import ArgumentParser
 from pathlib import Path
 
-from . import image, ocr, train, utils
+from . import image, ocr, train
 
 
 def parse_args(args):
@@ -13,9 +13,12 @@ def parse_args(args):
 
     parser.add_argument("-t", "--train", action="store_true", default=False)
     parser.add_argument(
-        "-to", "--train-output", action="store", type=Path, default=Path("out.npz")
+        "-to", "--train-output", action="store", type=Path,
+        default=Path("out.npz")
     )
-    parser.add_argument("-c", "--classifier", action="store", type=Path, metavar="path")
+    parser.add_argument(
+        "-c", "--classifier", action="store", type=Path, metavar="path"
+    )
     parser.add_argument("-d", "--debug", action="store_true", default=False)
     parser.add_argument("images", nargs="+", action="store", type=image.Image)
 
@@ -30,11 +33,11 @@ def main(args):
     level = logging.DEBUG if config.debug else logging.INFO
     logging.basicConfig(level=level, format=log_format)
 
-    logging.debug(f"Command line arguments: {args}")
+    logging.debug("Command line arguments: %s", args)
 
     if config.train:
         # Program is run under training mode, images are used to train
-        logging.debug(f"Training mode")
+        logging.debug("Training mode")
         images = config.images
         outfile = config.train_output
         train.knn.make_from_images(images, outfile)
@@ -42,14 +45,14 @@ def main(args):
     else:
         # Program is otherwise running in classifying mode, images are used for
         # ocr
-        logging.debug(f"Classifying mode")
+        logging.debug("Classifying mode")
         if config.classifier.is_file():
-            logging.debug(f"Using classifier file '{config.classifier}'")
+            logging.debug("Using classifier file '%s'", config.classifier)
             images = config.images
             classifier = config.classifier
             knn, res = train.knn.make_from_file(classifier)
 
-            for image in images:
-                ocr.detect(image, knn, res, debug=config.debug)
+            for img in images:
+                ocr.detect(img, knn, res, debug=config.debug)
         else:
-            logging.error(f"Invalid classifier file: '{config.classifier}'")
+            logging.error("Invalid classifier file '%s'", config.classifier)

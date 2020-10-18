@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
-import cv2
 import itertools
-import numpy as np
 import sys
+
+import cv2
+import numpy as np
 
 
 def list_contains_same_elements(_list):
@@ -13,7 +14,7 @@ def list_contains_same_elements(_list):
     try:
         first = next(iterator)
     except StopIteration:
-        return true
+        return True
     return all(first == rest for rest in _list)
 
 
@@ -78,15 +79,11 @@ def link_groups(groups):
     result = groups[:1]
 
     for group in groups[1:]:
-        merged = False
-        for row in result:
-            if any(i in row for i in group):
-                row += group
-                merged = True
-                break
-
-        if not merged:
+        row = next((r for r in result if any(g in r for g in group)), None)
+        if row is None:
             result.append(group)
+        else:
+            row += group
 
     result = [unique(i) for i in result]
     return result

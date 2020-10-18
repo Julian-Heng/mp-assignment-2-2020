@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 
-import cv2
+import itertools
 import logging
-import numpy as np
-import sys
 import time
 
-from itertools import chain, combinations
+import cv2
+import numpy as np
 
 from . import utils, colors
 
@@ -16,21 +15,24 @@ def detect(image, knn, knn_res, debug=False):
     #   1. Process the image
     #   2. Try and get the contours for the numbers
     #   3. Crop the image to those contours
-    #   4. Perform contours one more time to get the numbers separately <- might change
+    #   4. Perform connected components on the crop
     #   5. Detect the number individually
-    logging.info(f"Detecting using image '{image.filename}'")
+    logging.info("Detecting using image '%s'", image.filename)
     processed_img = _preprocess_image(image.image)
     contour_groups = _extract_contours(processed_img, image)
     crops = _crop_contour_groups(image, contour_groups)
 
     if len(contour_groups) == 0:
-        logging.info(f"Unable to detect any contours!!")
+        logging.info("Unable to detect any contours!!")
         return
 
     i, contours = utils.largest_contour_group_by_area(contour_groups)
     crop = crops[i]
+
+    # Resolution spec needs to be reversed and be in a tuple for cv2.resize
+    knn_res = tuple(knn_res[::-1])
     digits = _detect_digits(image, crop, knn, knn_res, debug)
-    logging.debug(f"Detected digits: {digits}")
+    logging.debug("Detected digits: %s", digits)
 
     _write_results(image, contours, crop, digits)
 
@@ -56,12 +58,12 @@ def _preprocess_image(img):
 
 def _extract_contours(processed_img, image):
     # Find contours
-    logging.debug(f"Getting contours...")
-    _, contours, hier = cv2.findContours(
+    logging.debug("Getting contours...")
+    _, contours, _ = cv2.findContours(
         processed_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
 
-    logging.debug(f"No. of contours: {len(contours)}")
+    logging.debug("No. of contours: %d", len(contours))
 
     # Convert the contours into a single giant group
     contour_groups = [contours]
@@ -69,7 +71,10 @@ def _extract_contours(processed_img, image):
     # Start filtering out contours
     stages = {
         "Stage 1": ("Filtering bad contours", _stage_1_contour_groups_filter),
-        "Stage 2": ("Comparing contours distance", _stage_2_contour_groups_filter),
+        "Stage 2": (
+            "Comparing contours distance",
+            _stage_2_contour_groups_filter
+        ),
         "Stage 3": (
             "Comparing contours line straightness",
             _stage_3_contour_groups_filter,
@@ -80,26 +85,26 @@ def _extract_contours(processed_img, image):
     logging.info("Started filtering...")
     total_start = time.time()
     for stage_name, (stage_msg, stage_action) in stages.items():
-        logging.info(f"{stage_name}: {stage_msg}")
+        logging.info("%s: %s", stage_name, stage_msg)
+
+        start = time.time()
+        filtered_contours = stage_action(image, contour_groups)
+        end = time.time()
 
         before_count = sum(map(len, contour_groups))
-        start = time.time()
-
-        filtered_contours = stage_action(image, contour_groups)
-
-        end = time.time()
         after_count = sum(map(len, filtered_contours))
 
         delta = before_count - after_count
         elapsed = (end - start) * 1000
 
-        msg = f"{stage_name}: Removed {delta} contours, "
-        msg += f"{after_count} remains. ({elapsed:.2f}ms)"
-        logging.debug(msg)
+        logging.debug(
+            "%s: Removed %d contours, %d remains. (%.2fms)",
+            stage_name, delta, after_count, elapsed
+        )
         contour_groups = filtered_contours
     total_end = time.time()
     elapsed = (total_end - total_start) * 1000
-    logging.info(f"Finished filtering ({elapsed:.2f}ms)")
+    logging.info("Finished filtering (%.2fms)", elapsed)
 
     return contour_groups
 
@@ -140,31 +145,28 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
     )
 
     digits = list()
-    for i, (component, coords) in enumerate(zip(components, components_coords)):
+    for i, (mask, coords) in enumerate(zip(components, components_coords)):
         x1, y1, w, h = coords
         x2 = x1 + w
         y2 = y1 + h
-        component = component[y1:y2, x1:x2]
 
-        component = cv2.copyMakeBorder(
-            component, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
+        mask = mask[y1:y2, x1:x2]
+        mask = cv2.copyMakeBorder(
+            mask, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
         )
-
-        component = cv2.resize(
-            component, tuple(knn_res[::-1]), interpolation=cv2.INTER_NEAREST
-        )
+        mask = cv2.resize(mask, knn_res, interpolation=cv2.INTER_NEAREST)
 
         if debug:
-            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", component)
+            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
             """
-            cv2.imshow(image.filename, component)
+            cv2.imshow(image.filename, mask)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
             """
 
-        component = component.reshape(-1, np.prod(knn_res)).astype(np.float32)
+        mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
 
-        ret, result, neighbour, dist = knn.findNearest(component, k=1)
+        ret, _, _, _ = knn.findNearest(mask, k=1)
         digits.append(str(int(ret)))
 
     return "".join(digits)
@@ -175,15 +177,18 @@ def _write_results(image, contours, crop, digits):
     ext = image.extension
     box = utils.get_contour_group_bounding_rect(contours)
 
-    logging.info(f"Writing 'DetectedArea_{fname}{ext}'")
-    cv2.imwrite(f"DetectedArea_{fname}{ext}", crop)
+    dest_fname = f"DetectedArea_{fname}{ext}"
+    logging.info("Writing '%s'", dest_fname)
+    cv2.imwrite(dest_fname, crop)
 
-    logging.info(f"Writing 'BoundingBox_{fname}.txt'")
-    with open(f"BoundingBox_{fname}.txt", "w") as f:
+    dest_fname = f"BoundingBox_{fname}.txt"
+    logging.info("Writing '%s'", dest_fname)
+    with open(dest_fname, "w") as f:
         f.write(str(box))
 
-    logging.info(f"Writing 'House_{fname}.txt'")
-    with open(f"House_{fname}.txt", "w") as f:
+    dest_fname = f"House_{fname}.txt"
+    logging.info("Writing '%s'", dest_fname)
+    with open(dest_fname, "w") as f:
         f.write(f"Building {digits}")
 
 
@@ -217,7 +222,6 @@ def _stage_1_contour_groups_filter(image, contour_groups):
     height = image.height
     width = image.width
     area = image.area
-    border_tolerance = 5
 
     filtered_contour_groups = list()
 
@@ -226,10 +230,10 @@ def _stage_1_contour_groups_filter(image, contour_groups):
         for i, contour in enumerate(contours):
             is_good, msg = _is_good_contour(contour, height, width, area)
             if is_good:
-                logging.debug(f"Contour {i} is good")
+                logging.debug("Contour %d is good", i)
                 filtered_contours.append(contour)
             else:
-                logging.debug(f"Contour {i} filtered: {msg}")
+                logging.debug("Contour %d filtered: %s", i, msg)
 
         if len(filtered_contours) > 0:
             filtered_contour_groups.append(filtered_contours)
@@ -265,7 +269,7 @@ def _is_good_contour(contour, height, width, area):
     if False:
         pass
 
-    ## Filter any contours where the height is less than the width
+    # Filter any contours where the height is less than the width
     elif h < w:
         msg = "height is less than width "
         msg += f"(h: {h}, w: {w})"
@@ -273,25 +277,25 @@ def _is_good_contour(contour, height, width, area):
     # Filter any contours where the height is less than 1.2 times the
     # width
     elif contour_aspect_ratio < 1.2:
-        msg = f"contour aspect ratio is less than 1.2 "
+        msg = "contour aspect ratio is less than 1.2 "
         msg += f"({contour_aspect_ratio:.5f})"
 
     # Filter any contours where the height is greater than 3.4 times the
     # width
     elif contour_aspect_ratio > 3.4:
-        msg = f"contour aspect ratio is more than 3.4 "
+        msg = "contour aspect ratio is more than 3.4 "
         msg += f"({contour_area_ratio:.5f})"
 
     # Filter any contours where the height is more than 75% the image
     # height
     elif height_ratio > 0.75:
-        msg = f"contour height to image height ratio is more than 0.75 "
+        msg = "contour height to image height ratio is more than 0.75 "
         msg = f"({height_ratio:.5f})"
 
     # Filter any contours where the width is more than 75% the image
     # width
     elif width_ratio > 0.75:
-        msg = f"contour width to image width ratio is more than 0.75 "
+        msg = "contour width to image width ratio is more than 0.75 "
         msg += f"({width_ratio:.5f})"
 
     # Filter any contours where the number of pixels is less than 70
@@ -301,31 +305,31 @@ def _is_good_contour(contour, height, width, area):
     # Filter any contours where the area ratio is more than 10% of the
     # image
     elif contour_area_ratio > 0.1:
-        msg = f"contour image area ratio is more than 0.1 "
+        msg = "contour image area ratio is more than 0.1 "
         msg += f"({contour_area_ratio:.5f})"
 
     # Filter any contours where the area ratio is less than 0.12% of the
     # image
     elif contour_area_ratio < 0.0012:
-        msg = f"contour image area ratio is less than 0.0012 "
+        msg = "contour image area ratio is less than 0.0012 "
         msg += f"({contour_area_ratio:.5f})"
 
     # Filter any contours where the number of approximated points are less
     # than 10
     elif num_approx < 10:
-        msg = f"contour approximate datapoints count is less than 10 "
+        msg = "contour approximate datapoints count is less than 10 "
         msg += f"({num_approx})"
 
     # Filter any contours where the number of approximated points are more
     # than 1000
     elif num_approx > 1000:
-        msg = f"contour approximate datapoints count is more than 1000 "
+        msg = "contour approximate datapoints count is more than 1000 "
         msg += f"({num_approx})"
 
     # Filter any contours where they lie on the edges of the image
     elif (
-        any(0 == i for i in x_coords)
-        or any(0 == i for i in y_coords)
+        any(i == 0 for i in x_coords)
+        or any(i == 0 for i in y_coords)
         or any(width == i for i in x_coords)
         or any(height == i for i in y_coords)
     ):
@@ -344,7 +348,7 @@ def _stage_2_contour_groups_filter(image, contour_groups):
     height = image.height
     width = image.width
     distance_limit = np.hypot(height, width) // 12
-    logging.debug(f"Distance limit: {distance_limit:.2f}")
+    logging.debug("Distance limit: %.2f", distance_limit)
 
     filtered_contour_groups = list()
     for contours in contour_groups:
@@ -355,45 +359,47 @@ def _stage_2_contour_groups_filter(image, contour_groups):
 
 
 def _stage_2_contour_group_filter(contours, distance_limit):
-    msg_fmt = "Distance between contour {} and {} is good"
+    info_fmt = "Calculating smallest distance between contour %d and %d"
+    msg_fmt = "Distance between contour %d and %d is good (%.2fpx)"
     filtered_msg_fmt = (
-        "Distance between contour {} and {} is not within the limit ({:.2f})"
+        "Distance between contour %d and %d is not within the limit (%.2fpx)"
     )
 
     # Check if there's more than 1 contour
     if len(contours) < 2:
-        logging.debug(f"Not enough contours in group to compare. Skipping...")
+        logging.debug("Not enough contours in group to compare. Skipping...")
 
         # Need to encapsulate the contours within a group
         return [contours]
 
     # For each possible pairing of contours
     distances = list()
-    for i, j in combinations(range(len(contours)), 2):
+    for i, j in itertools.combinations(range(len(contours)), 2):
         # Get the approximated points of the two contours
         approx_1 = utils.get_contour_approx(contours[i])
         approx_2 = utils.get_contour_approx(contours[j])
 
         # Get the smallest possible points between all points of the 2 contour
         # approximates
-        logging.debug(f"Calculating smallest distance between contour {i} and {j}")
+        logging.debug(info_fmt, i, j)
         contour_distances = [
-            (i, j, np.linalg.norm(p2 - p1)) for p2 in approx_2 for p1 in approx_1
+            (i, j, np.linalg.norm(p2 - p1))
+            for p2 in approx_2 for p1 in approx_1
         ]
         _contour_distances = np.array(contour_distances)
-        distances.append(contour_distances[np.argmin(_contour_distances[:, 2])])
+        distances.append(
+            contour_distances[np.argmin(_contour_distances[:, 2])]
+        )
 
     # For each calculated distances
     groups = list()
     for i, j, distance in distances:
         # Skip if distance is more than the limit
         if distance > distance_limit:
-            msg = filtered_msg_fmt.format(i, j, distance)
-            logging.debug(msg)
+            logging.debug(filtered_msg_fmt, i, j, distance)
             continue
 
-        msg = msg_fmt.format(i, j)
-        logging.debug(msg)
+        logging.debug(msg_fmt, i, j, distance)
 
         # Find the group that contains either contour indexes
         dest_group = (g for g in groups if any(i in c or j in c for c in g))
@@ -430,14 +436,15 @@ def _stage_3_contour_groups_filter(image, contour_groups):
 
 
 def _stage_3_contour_group_filter(contours):
-    msg_fmt = "Angle between contour {} and {} is good"
+    info_fmt = "Calculating angle between contour %d and %d"
+    msg_fmt = "Angle between contour %d and %d is good (%.2f degrees)"
     filtered_msg_fmt = (
-        "Angle between contour {} and {} is not in range ({:.2f} degrees)"
+        "Angle between contour %d and %d is not in range (%.2f degrees)"
     )
 
     # Check if there's more than 1 contour
     if len(contours) < 2:
-        logging.debug(f"Not enough contours to compare. Skipping...")
+        logging.debug("Not enough contours to compare. Skipping...")
 
         # Need to encapsulate the contours within a group
         return [contours]
@@ -447,9 +454,11 @@ def _stage_3_contour_group_filter(contours):
 
     # For each possible pairing of contours
     angles = list()
-    for i, j in combinations(range(len(contours)), 2):
+    for i, j in itertools.combinations(range(len(contours)), 2):
         p1 = centers[i]
         p2 = centers[j]
+
+        logging.debug(info_fmt, i, j)
 
         # Get the angle of the gradient of the line connecting the two points
         angles.append((i, j, utils.angle_of_points(p1, p2)))
@@ -458,13 +467,14 @@ def _stage_3_contour_group_filter(contours):
     groups = list()
     for i, j, angle in angles:
         # Skip if angle is more than the limit
-        if not utils.is_around(angle, 0, 20) and not utils.is_around(angle, 180, 20):
-            msg = filtered_msg_fmt.format(i, j, angle)
-            logging.debug(msg)
+        if (
+            not utils.is_around(angle, 0, 20)
+            and not utils.is_around(angle, 180, 20)
+        ):
+            logging.debug(filtered_msg_fmt, i, j, angle)
             continue
 
-        msg = msg_fmt.format(i, j, angle)
-        logging.debug(msg)
+        logging.debug(msg_fmt, i, j, angle)
 
         # Find the group that contains either contour indexes
         dest_group = (g for g in groups if any(i in c or j in c for c in g))
