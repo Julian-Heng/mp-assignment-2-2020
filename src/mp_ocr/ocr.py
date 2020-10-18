@@ -11,26 +11,46 @@ from . import utils, colors
 
 
 def detect(image, knn, knn_res, debug=False):
-    # General steps are:
-    #   1. Process the image
-    #   2. Try and get the contours for the numbers
-    #   3. Crop the image to those contours
-    #   4. Perform connected components on the crop
-    #   5. Detect the number individually
+    """Detects the digits of a given image
+
+    General steps are:
+        1. Process the image
+        2. Try and get the contours for the numbers
+        3. Crop the image to those contours
+        4. Perform connected components on the crop
+        5. Detect the number individually
+
+    Parameters
+    ----------
+    image : Image
+        The image object to detect from
+    knn : ml_KNearest
+        The opencv knn model used to predict the digits
+    knn_res : ndarray
+        The trained image's resolution in a numpy array in the form [w, h]
+    debug : bool, optional
+        Toggles debug mode
+    """
     logging.info("Detecting using image '%s'", image.filename)
+
+    # Image preprocessing and extraction
     processed_img = _preprocess_image(image.image)
     contour_groups = _extract_contours(processed_img, image)
     crops = _crop_contour_groups(image, contour_groups)
 
+    # Check if we've extracted anything
     if len(contour_groups) == 0:
         logging.info("Unable to detect any contours!!")
         return
 
+    # Get largest contour
     i, contours = utils.largest_contour_group_by_area(contour_groups)
     crop = crops[i]
 
     # Resolution spec needs to be reversed and be in a tuple for cv2.resize
     knn_res = tuple(knn_res[::-1])
+
+    # Detect digits and write results
     digits = _detect_digits(image, crop, knn, knn_res, debug)
     logging.debug("Detected digits: %s", digits)
 
@@ -42,6 +62,21 @@ def detect(image, knn, knn_res, debug=False):
 
 
 def _preprocess_image(img):
+    """Preprocess an image for digits detection
+
+    This function will apply a Gaussian filter, followed by an OTSU
+    binary threshold filter.
+
+    Parameters
+    ----------
+    img : ndarray
+        The image as a ndarray to perform the preprocessing on
+
+    Returns
+    -------
+    img : ndarray
+        The preprocessed image
+    """
     logging.debug("Performing image preprocessing...")
 
     # Apply gaussian blur
@@ -57,6 +92,32 @@ def _preprocess_image(img):
 
 
 def _extract_contours(processed_img, image):
+    """Extracts the most relevant contours for digit detection
+
+    This function will try to find contours that fits a specific criterion that
+    best matches digits.
+
+    The filtering takes 3 stages:
+        1. Filter on the features, such as width and height of the contour
+        2. Group contours by distance
+        3. Group contours by angle
+
+    Parameters
+    ----------
+    processed_img : ndarray
+        The preprocessed binary image
+    image : Image
+        The image object of the given image
+
+    Returns
+    -------
+    contour_groups : list
+        List containing lists of contours
+
+    Notes
+    -----
+    The structure of the returned value is a list of groups of contours
+    """
     # Find contours
     logging.debug("Getting contours...")
     _, contours, _ = cv2.findContours(
@@ -97,11 +158,14 @@ def _extract_contours(processed_img, image):
         delta = before_count - after_count
         elapsed = (end - start) * 1000
 
+        # Print statistics
         logging.debug(
             "%s: Removed %d contours, %d remains. (%.2fms)",
             stage_name, delta, after_count, elapsed
         )
         contour_groups = filtered_contours
+
+    # Print statistics
     total_end = time.time()
     elapsed = (total_end - total_start) * 1000
     logging.info("Finished filtering (%.2fms)", elapsed)
@@ -110,62 +174,98 @@ def _extract_contours(processed_img, image):
 
 
 def _crop_contour_groups(image, contour_groups):
-    """
-    Crop the image to the bounding rectangle of a group of contours
+    """Crop the image to the bounding rectangle of a group of contours
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    contour_groups : list
+        List containing lists of contours
+
+    Returns
+    -------
+    cropped_groups : list
+        List containing the cropped contour groups
     """
     cropped_groups = list()
     img = image.image
+
+    # For each contour group, get bounding rectangle of the group and crop
     for contours in contour_groups:
         x1, y1, w, h = utils.get_contour_group_bounding_rect(contours)
         x2 = x1 + w
         y2 = y1 + h
         cropped = img[y1:y2, x1:x2]
         cropped_groups.append(cropped)
+
     return cropped_groups
 
 
 def _detect_digits(image, crop, knn, knn_res, debug=False):
+    """Detect the digits of an cropped image
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    crop : ndarray
+        The crop of the image containing the digit to detect
+    knn : ml_KNearest
+        The opencv knn model used to predict the digits
+    knn_res : ndarray
+        The trained image's resolution in a numpy array in the form [w, h]
+    debug : bool, optional
+        Toggles debug mode
+
+    Returns
+    -------
+    str
+        The detected digits
+    """
+    # Preprocess the cropped image and get the connected components
     img = _preprocess_image(crop)
     count, labels = cv2.connectedComponents(img)
 
+    # Extract the individual components
     components = list()
     components_coords = list()
     for label in range(1, count):
         mask = np.array(labels, dtype=np.uint8)
         mask[labels == label] = 255
         mask[labels != label] = 0
-
         coords = cv2.boundingRect(mask)
-
         components.append(mask)
         components_coords.append(coords)
 
+    # Sort components by x coordinate
     components, components_coords = zip(
         *sorted(zip(components, components_coords), key=lambda x: x[1][0])
     )
 
+    # Begin detecting the different components
     digits = list()
     for i, (mask, coords) in enumerate(zip(components, components_coords)):
+        # Crop the component
         x1, y1, w, h = coords
         x2 = x1 + w
         y2 = y1 + h
-
         mask = mask[y1:y2, x1:x2]
+
+        # Surround the component with a 2px black border
         mask = cv2.copyMakeBorder(
             mask, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
         )
+
+        # Resize to the training image resolution
         mask = cv2.resize(mask, knn_res, interpolation=cv2.INTER_NEAREST)
 
         if debug:
             cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
-            """
-            cv2.imshow(image.filename, mask)
-            cv2.waitKey(0)
-            cv2.destroyAllWindows()
-            """
 
         mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
 
+        # Predict
         ret, _, _, _ = knn.findNearest(mask, k=1)
         digits.append(str(int(ret)))
 
@@ -173,19 +273,36 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
 
 
 def _write_results(image, contours, crop, digits):
+    """Write results to files
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    contours : list
+        List containing contours
+    crop : ndarray
+        The crop of the image containing the digit to detect
+    digits : str
+        The detected digits
+    """
     fname = image.filename_without_extension
     ext = image.extension
+
     box = utils.get_contour_group_bounding_rect(contours)
 
+    # Write the crop
     dest_fname = f"DetectedArea_{fname}{ext}"
     logging.info("Writing '%s'", dest_fname)
     cv2.imwrite(dest_fname, crop)
 
+    # Write the bounding box specification
     dest_fname = f"BoundingBox_{fname}.txt"
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
         f.write(str(box))
 
+    # Write the detected digits
     dest_fname = f"House_{fname}.txt"
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
@@ -193,10 +310,26 @@ def _write_results(image, contours, crop, digits):
 
 
 def _write_results_debug(image, processed_img, contour_groups, crops):
+    """Write debug information to files
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    processed_img : ndarray
+        The preprocessed binary image
+    contour_groups : list
+        List containing lists of contours
+    crops : list
+        The list of crops of the image derived from the contour groups
+    """
     img = image.image
+
+    # Write original and binary image
     cv2.imwrite(f"DEBUG_orig_{image.filename}", img)
     cv2.imwrite(f"DEBUG_bin_{image.filename}", processed_img)
 
+    # Draw each contour and label them accordingly
     for i, contours in enumerate(contour_groups):
         x, y, w, h = utils.get_contour_group_bounding_rect(contours)
         w //= 2
@@ -212,13 +345,29 @@ def _write_results_debug(image, processed_img, contour_groups, crops):
         cv2.putText(img, f"{i}", (x, y), font, 1, colors.WHITE, 3, cv2.LINE_AA)
         cv2.putText(img, f"{i}", (x, y), font, 1, colors.BLACK, 2, cv2.LINE_AA)
 
+    # Write contours extracted
     cv2.imwrite(f"DEBUG_contours_{image.filename}", img)
 
+    # Write each crop
     for i, cropped in enumerate(crops):
         cv2.imwrite(f"DEBUG_cropped_{i}_{image.filename}", cropped)
 
 
 def _stage_1_contour_groups_filter(image, contour_groups):
+    """Filter contour groups by contour features
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    contour_groups : list
+        List containing lists of contours
+
+    Returns
+    -------
+    filtered_contour_groups : list
+        List containing lists of the remaining, non-filtered contours
+    """
     height = image.height
     width = image.width
     area = image.area
@@ -242,6 +391,27 @@ def _stage_1_contour_groups_filter(image, contour_groups):
 
 
 def _is_good_contour(contour, height, width, area):
+    """Filter contour groups by contour features
+
+    Parameters
+    ----------
+    contour : ndarray
+        A contour represented as numpy array returned from the opencv
+        findContour method
+    height : int
+        The height of the image
+    width : int
+        The width of the image
+    area : int
+        The area of the image
+
+    Returns
+    -------
+    is_good : bool
+        Determines if the contour should or should not be filtered
+    msg : str
+        The reason, if any, for the contour being filtered
+    """
     is_good = False
     msg = None
 
@@ -253,6 +423,7 @@ def _is_good_contour(contour, height, width, area):
     height_ratio = h / height
     width_ratio = w / width
 
+    # Get contour approximates
     approx = utils.get_contour_approx(contour)
     num_approx = len(approx)
     _approx = np.squeeze(approx)
@@ -343,6 +514,20 @@ def _is_good_contour(contour, height, width, area):
 
 
 def _stage_2_contour_groups_filter(image, contour_groups):
+    """Group contours by distances between contours
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    contour_groups : list
+        List containing lists of contours
+
+    Returns
+    -------
+    filtered_contour_groups : list
+        List containing lists of the remaining, non-filtered contours
+    """
     # Limit the distance between to the contours to 1/12th of the image
     # hypotenuse
     height = image.height
@@ -352,13 +537,28 @@ def _stage_2_contour_groups_filter(image, contour_groups):
 
     filtered_contour_groups = list()
     for contours in contour_groups:
-        groups = _stage_2_contour_group_filter(contours, distance_limit)
-        for group in groups:
-            filtered_contour_groups.append(group)
+        filtered_contour_groups += _stage_2_contour_group_filter(
+            contours, distance_limit
+        )
     return filtered_contour_groups
 
 
 def _stage_2_contour_group_filter(contours, distance_limit):
+    """Helper function to split a given group of contours into multiple groups
+    on the distance between contours
+
+    Parameters
+    ----------
+    contours : list
+        List containing contours
+    distance_limit : int
+        The distance limit to split contours by
+
+    Returns
+    -------
+    groups : list
+        List containing groups of contours
+    """
     info_fmt = "Calculating smallest distance between contour %d and %d"
     msg_fmt = "Distance between contour %d and %d is good (%.2fpx)"
     filtered_msg_fmt = (
@@ -427,15 +627,40 @@ def _stage_2_contour_group_filter(contours, distance_limit):
 
 
 def _stage_3_contour_groups_filter(image, contour_groups):
+    """Group contours by angles between contours
+
+    Parameters
+    ----------
+    image : Image
+        The image object of the given image
+    contour_groups : list
+        List containing lists of contours
+
+    Returns
+    -------
+    filtered_contour_groups : list
+        List containing lists of the remaining, non-filtered contours
+    """
     filtered_contour_groups = list()
     for contours in contour_groups:
-        groups = _stage_3_contour_group_filter(contours)
-        for group in groups:
-            filtered_contour_groups.append(group)
+        filtered_contour_groups += _stage_3_contour_group_filter(contours)
     return filtered_contour_groups
 
 
 def _stage_3_contour_group_filter(contours):
+    """Helper function to split a given group of contours into multiple groups
+    on the angle between contours
+
+    Parameters
+    ----------
+    contours : list
+        List containing contours
+
+    Returns
+    -------
+    groups : list
+        List containing groups of contours
+    """
     info_fmt = "Calculating angle between contour %d and %d"
     msg_fmt = "Angle between contour %d and %d is good (%.2f degrees)"
     filtered_msg_fmt = (

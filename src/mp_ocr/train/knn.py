@@ -9,7 +9,25 @@ from ..utils import list_contains_same_elements
 
 
 def make_from_images(images, outfile=None):
-    """ Makes a knn classifier from image """
+    """Makes a knn classifier from image
+
+    Parameters
+    ----------
+    images : list
+        A list of images to train against
+    outfile : Path, optional
+        The destination file for storing the training and label data
+
+    Returns
+    -------
+    knn : ml_KNearest
+        The opencv knn model created using the training images
+
+    Raises
+    ------
+    TypeError
+        Raised when a not all the training images have the same resolution
+    """
     logging.debug("Making knn from images")
 
     # Validate images:
@@ -35,6 +53,26 @@ def make_from_images(images, outfile=None):
 
 
 def make_from_file(infile):
+    """Makes a knn classifier from file
+
+    Parameters
+    ----------
+    infile : Path
+        The clasifier file
+
+    Returns
+    -------
+    knn : ml_KNearest
+        The opencv knn model created using the input classifier file
+
+    Raises
+    ------
+    TypeError
+        Raised when infile does not exist
+    """
+    if not infile.exists():
+        raise TypeError(f"File '{str(infile)}' does not exist")
+
     logging.debug("Loading knn train and labels from '%s'", infile)
     with np.load(str(infile)) as data:
         train = data["train"]
@@ -44,12 +82,38 @@ def make_from_file(infile):
 
 
 def make_from_training_data(train, labels):
+    """Makes a knn classifier using training data and labels
+
+    Parameters
+    ----------
+    train : ndarray
+        The training data used to train the knn classifier
+    labels : ndarray
+        The labels for each training data
+
+    Returns
+    -------
+    knn : ml_KNearest
+        The opencv knn model created using the training data and labels
+    """
     knn = cv2.ml.KNearest_create()
     knn.train(train, cv2.ml.ROW_SAMPLE, labels)
     return knn
 
 
 def _preprocess_image(image):
+    """Prepare the image for training
+
+    Parameters
+    ----------
+    img : ndarray
+        The image as a ndarray to perform the preprocessing on
+
+    Returns
+    -------
+    img : ndarray
+        The preprocessed image
+    """
     logging.debug("Training using image '%s'", image.filename)
     src_img = image.image
     res = image.resolution

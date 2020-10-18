@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-""" Package main """
+""" mp_ocr package entry point """
 
 import sys
 
