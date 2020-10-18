@@ -27,7 +27,7 @@ def detect(image, knn, knn_res, debug=False):
         logging.info(f"Unable to detect any contours!!")
         return
 
-    i, contours = _largest_contour_group_by_area(contour_groups)
+    i, contours = utils.largest_contour_group_by_area(contour_groups)
     crop = crops[i]
     digits = _detect_digits(image, crop, knn, knn_res, debug)
     logging.debug(f"Detected digits: {digits}")
@@ -77,8 +77,10 @@ def _extract_contours(processed_img, image):
     }
 
     # Loop through the stages
+    logging.info("Started filtering...")
+    total_start = time.time()
     for stage_name, (stage_msg, stage_action) in stages.items():
-        logging.debug(f"{stage_name}: {stage_msg}")
+        logging.info(f"{stage_name}: {stage_msg}")
 
         before_count = sum(map(len, contour_groups))
         start = time.time()
@@ -95,12 +97,9 @@ def _extract_contours(processed_img, image):
         msg += f"{after_count} remains. ({elapsed:.2f}ms)"
         logging.debug(msg)
         contour_groups = filtered_contours
-
-    # Remove any contours that's within another contour
-    contour_groups = [utils.remove_inner_contours(i) for i in contour_groups]
-
-    # Sort the contours by x coordinate
-    contour_groups = [utils.sort_contours_by_x_coord(i) for i in contour_groups]
+    total_end = time.time()
+    elapsed = (total_end - total_start) * 1000
+    logging.info(f"Finished filtering ({elapsed:.2f}ms)")
 
     return contour_groups
 
@@ -141,9 +140,11 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
     )
 
     digits = list()
-    for component, coords in zip(components, components_coords):
-        x, y, w, h = coords
-        component = component[y : y + h, x : x + w]
+    for i, (component, coords) in enumerate(zip(components, components_coords)):
+        x1, y1, w, h = coords
+        x2 = x1 + w
+        y2 = y1 + h
+        component = component[y1:y2, x1:x2]
 
         component = cv2.copyMakeBorder(
             component, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
@@ -153,8 +154,9 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
             component, tuple(knn_res[::-1]), interpolation=cv2.INTER_NEAREST
         )
 
-        """
         if debug:
+            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", component)
+            """
             cv2.imshow(image.filename, component)
             cv2.waitKey(0)
             cv2.destroyAllWindows()
@@ -394,7 +396,8 @@ def _stage_2_contour_group_filter(contours, distance_limit):
         logging.debug(msg)
 
         # Find the group that contains either contour indexes
-        dest_group = next((g for g in groups if any(i in c or j in c for c in g)), None)
+        dest_group = (g for g in groups if any(i in c or j in c for c in g))
+        dest_group = next(dest_group, None)
 
         if dest_group is None:
             # If no group is found, create a new group containing the 2
@@ -413,7 +416,7 @@ def _stage_2_contour_group_filter(contours, distance_limit):
             groups.append([(j, j)])
 
     # Convert group indicies to contours
-    groups = _map_group_indexes_to_contours(groups, contours)
+    groups = utils.map_group_indexes_to_contours(groups, contours)
     return groups
 
 
@@ -449,7 +452,7 @@ def _stage_3_contour_group_filter(contours):
         p2 = centers[j]
 
         # Get the angle of the gradient of the line connecting the two points
-        angles.append((i, j, utils.angle_between_points(p1, p2)))
+        angles.append((i, j, utils.angle_of_points(p1, p2)))
 
     # For each calculated angle
     groups = list()
@@ -464,7 +467,8 @@ def _stage_3_contour_group_filter(contours):
         logging.debug(msg)
 
         # Find the group that contains either contour indexes
-        dest_group = next((g for g in groups if any(i in c or j in c for c in g)), None)
+        dest_group = (g for g in groups if any(i in c or j in c for c in g))
+        dest_group = next(dest_group, None)
 
         if dest_group is None:
             # If no group is found, create a new group containing the 2
@@ -483,45 +487,5 @@ def _stage_3_contour_group_filter(contours):
             groups.append([(j, j)])
 
     # Convert group indicies to contours
-    groups = _map_group_indexes_to_contours(groups, contours)
+    groups = utils.map_group_indexes_to_contours(groups, contours)
     return groups
-
-
-def _map_group_indexes_to_contours(groups, contours):
-    """
-    Data structure of groups is an array of an array containing a pair of
-    ints. The ints are the indexes of the contours array.
-    """
-    group_indexes = list()
-    mapped_groups = list()
-
-    # Prepare indexes
-    for group in groups:
-        # Get all of the indexes as a 1d array
-        indexes = utils.flatten(group)
-        indexes = utils.unique(indexes)
-        indexes.sort()
-        group_indexes.append(indexes)
-
-    # We need to combine any groups that contains the same indexes
-    group_indexes = utils.link_groups(group_indexes)
-
-    for indexes in group_indexes:
-        # Map the indexes to the contours array
-        mapped_groups.append([contours[i] for i in indexes])
-
-    return mapped_groups
-
-
-def _largest_contour_group_by_area(groups):
-    """
-    Returns the contour group with the largest combined area
-
-    Data structure of groups is an array of an array containing a list of
-    contours. They need to be mapped from ints in
-    _map_group_indexes_to_contours.
-    """
-    areas = np.array([sum([cv2.contourArea(i) for i in g]) for g in groups])
-    index = np.argmax(areas)
-    largest_group = groups[index]
-    return index, largest_group

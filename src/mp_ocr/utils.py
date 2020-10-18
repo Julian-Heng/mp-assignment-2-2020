@@ -25,7 +25,7 @@ def is_between(num, low, high):
     return num > low and high > num
 
 
-def angle_between_points(p1, p2):
+def angle_of_points(p1, p2):
     x1, y1 = p1
     x2, y2 = p2
     return abs(np.rad2deg(np.arctan2(y2 - y1, x2 - x1))) % 180
@@ -92,42 +92,41 @@ def link_groups(groups):
     return result
 
 
-def sort_contours_by_x_coord(contours):
-    # From: https://www.pyimagesearch.com/2015/04/20/sorting-contours-using-python-and-opencv/
-    # Acessed 17/10/2020
+def map_group_indexes_to_contours(groups, contours):
+    """
+    Data structure of groups is an array of an array containing a pair of
+    ints. The ints are the indexes of the contours array.
+    """
+    group_indexes = list()
+    mapped_groups = list()
 
-    if len(contours) == 1:
-        return contours
+    # Prepare indexes
+    for group in groups:
+        # Get all of the indexes as a 1d array
+        indexes = flatten(group)
+        indexes = unique(indexes)
+        indexes.sort()
+        group_indexes.append(indexes)
 
-    boxes = [cv2.boundingRect(i) for i in contours]
-    sort, _ = zip(*sorted(zip(contours, boxes), key=lambda x: x[1][0]))
-    return sort
+    # We need to combine any groups that contains the same indexes
+    group_indexes = link_groups(group_indexes)
 
+    for indexes in group_indexes:
+        # Map the indexes to the contours array
+        mapped_groups.append([contours[i] for i in indexes])
 
-def remove_inner_contours(contours):
-    if len(contours) == 1:
-        return contours
-
-    filtered_contours = list()
-    boxes = [cv2.boundingRect(i) for i in contours]
-
-    for i in range(len(boxes)):
-        check = True
-        for j in range(len(boxes)):
-            if i == j:
-                continue
-            elif is_rect_inside_rect(boxes[i], boxes[j]):
-                check = False
-                break
-
-        if check:
-            filtered_contours.append(contours[i])
-
-    return filtered_contours
+    return mapped_groups
 
 
-def is_rect_inside_rect(rect_1, rect_2):
-    x1, y1, w1, h1 = rect_1
-    x2, y2, w2, h2 = rect_2
+def largest_contour_group_by_area(groups):
+    """
+    Returns the contour group with the largest combined area
 
-    return x1 >= x2 and y1 >= y2 and (x1 + w1) <= (x2 + w2) and (y1 + h1) <= (y2 + h2)
+    Data structure of groups is an array of an array containing a list of
+    contours. They need to be mapped from ints in
+    map_group_indexes_to_contours.
+    """
+    areas = np.array([sum([cv2.contourArea(i) for i in g]) for g in groups])
+    index = np.argmax(areas)
+    largest_group = groups[index]
+    return index, largest_group
