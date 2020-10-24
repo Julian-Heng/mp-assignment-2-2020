@@ -65,8 +65,22 @@ def main(args):
     if config.train:
         # Program is run under training mode, images are used to train
         logging.debug("Training mode")
-        images = config.images
+
+        # Check if arguments are valid
         outfile = config.train_output
+        parent = outfile.parent
+
+        if outfile.is_dir():
+            logging.error("Classifier output path '%s' is a directory", outfile)
+            sys.exit(1)
+
+        # Setup output directory
+        if not parent.exists():
+            logging.info("Creating output path '%s'", parent)
+            parent.mkdir(parents=True, exist_ok=True)
+
+        images = config.images
+
         train.knn.make_from_images(images, outfile)
 
     else:
