@@ -4,6 +4,7 @@
 
 import itertools
 import logging
+import re
 import time
 
 import cv2
@@ -295,24 +296,28 @@ def _write_results(image, contours, crop, digits):
     digits : str
         The detected digits
     """
-    fname = image.filename_without_extension
+    # Extract image number from filename
+    try:
+        fname = re.findall(r"\d+", image.filename_without_extension)[0]
+    except IndexError:
+        fname = str(0)
     ext = image.extension
 
     box = utils.get_contour_group_bounding_rect(contours)
 
     # Write the crop
-    dest_fname = f"DetectedArea_{fname}{ext}"
+    dest_fname = f"DetectedArea{fname}{ext}"
     logging.info("Writing '%s'", dest_fname)
     cv2.imwrite(dest_fname, crop)
 
     # Write the bounding box specification
-    dest_fname = f"BoundingBox_{fname}.txt"
+    dest_fname = f"BoundingBox{fname}.txt"
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
         f.write(str(box))
 
     # Write the detected digits
-    dest_fname = f"House_{fname}.txt"
+    dest_fname = f"House{fname}.txt"
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
         f.write(f"Building {digits}")
