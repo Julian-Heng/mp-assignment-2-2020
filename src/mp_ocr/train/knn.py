@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+""" knn module """
+
 import logging
 
 import cv2

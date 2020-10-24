@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+""" ocr module """
+
 import itertools
 import logging
 import time
