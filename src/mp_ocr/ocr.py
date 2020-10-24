@@ -439,7 +439,6 @@ def _is_good_contour(contour, height, width, area):
 
     # Get contour approximates
     approx = utils.get_contour_approx(contour)
-    num_approx = len(approx)
     _approx = np.squeeze(approx)
 
     # Edge case where there's only one point
@@ -499,24 +498,12 @@ def _is_good_contour(contour, height, width, area):
         msg = "contour image area ratio is less than 0.0012 "
         msg += f"({contour_area_ratio:.5f})"
 
-    # Filter any contours where the number of approximated points are less
-    # than 10
-    elif num_approx < 10:
-        msg = "contour approximate datapoints count is less than 10 "
-        msg += f"({num_approx})"
-
-    # Filter any contours where the number of approximated points are more
-    # than 1000
-    elif num_approx > 1000:
-        msg = "contour approximate datapoints count is more than 1000 "
-        msg += f"({num_approx})"
-
     # Filter any contours where they lie on the edges of the image
     elif (
-        any(i == 0 for i in x_coords)
-        or any(i == 0 for i in y_coords)
-        or any(width == i for i in x_coords)
-        or any(height == i for i in y_coords)
+        any(i in range(0, 5) for i in x_coords)
+        or any(i in range(0, 5) for i in y_coords)
+        or any(i in range(width - 5, width) for i in x_coords)
+        or any(i in range(height - 5, height) for i in y_coords)
     ):
         msg = "contour is on the edge of the image"
 
