@@ -3,6 +3,7 @@
 """ mp_ocr core application """
 
 import logging
+import sys
 
 from argparse import ArgumentParser
 from pathlib import Path
@@ -33,6 +34,9 @@ def parse_args(args):
     )
     parser.add_argument(
         "-c", "--classifier", action="store", type=Path, metavar="path"
+    )
+    parser.add_argument(
+        "-o", "--output", action="store", type=Path, default=Path()
     )
     parser.add_argument("-d", "--debug", action="store_true", default=False)
     parser.add_argument("images", nargs="+", action="store", type=image.Image)
@@ -69,13 +73,31 @@ def main(args):
         # Program is otherwise running in classifying mode, images are used for
         # ocr
         logging.debug("Classifying mode")
-        if config.classifier.is_file():
-            logging.debug("Using classifier file '%s'", config.classifier)
-            images = config.images
-            classifier = config.classifier
-            knn, res = train.knn.make_from_file(classifier)
 
-            for img in images:
-                ocr.detect(img, knn, res, debug=config.debug)
-        else:
+        # Check if arguments are valid
+        if not config.classifier.is_file():
             logging.error("Invalid classifier file '%s'", config.classifier)
+            sys.exit(1)
+
+        if config.output.is_file():
+            logging.error("Output path '%s' is not a directory", config.output)
+            sys.exit(1)
+
+        # Setup output directory
+        if not config.output.exists():
+            logging.info("Creating output path '%s'", config.output)
+            config.output.mkdir(parents=True, exist_ok=True)
+
+        logging.info("Using output path '%s'", config.output)
+
+        # Load classifier file
+        logging.debug("Using classifier file '%s'", config.classifier)
+        images = config.images
+        classifier = config.classifier
+        knn, res = train.knn.make_from_file(classifier)
+
+        # Detect digits
+        for img in images:
+            ocr.detect(
+                img, knn, res, out=config.output, debug=config.debug
+            )

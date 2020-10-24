@@ -7,13 +7,15 @@ import logging
 import re
 import time
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 
 from . import utils, colors
 
 
-def detect(image, knn, knn_res, debug=False):
+def detect(image, knn, knn_res, out=Path(), debug=False):
     """Detects the digits of a given image
 
     General steps are:
@@ -64,11 +66,11 @@ def detect(image, knn, knn_res, debug=False):
     elapsed = (end - start) * 1000
     logging.info("Finished in %.2fms", elapsed)
 
-    _write_results(image, contours, crop, digits)
+    _write_results(image, contours, crop, digits, out)
 
     # For debugging purposes
     if debug:
-        _write_results_debug(image, processed_img, contour_groups, crops)
+        _write_results_debug(image, processed_img, contour_groups, crops, out)
 
 
 def _preprocess_image(img):
@@ -343,7 +345,7 @@ def _prepare_digit_mask(mask, coords, knn_res):
     return mask
 
 
-def _write_results(image, contours, crop, digits):
+def _write_results(image, contours, crop, digits, out):
     """Write results to files
 
     Parameters
@@ -367,24 +369,24 @@ def _write_results(image, contours, crop, digits):
     box = utils.get_contour_group_bounding_rect(contours)
 
     # Write the crop
-    dest_fname = f"DetectedArea{fname}{ext}"
+    dest_fname = str(out.joinpath(f"DetectedArea{fname}{ext}"))
     logging.info("Writing '%s'", dest_fname)
     cv2.imwrite(dest_fname, crop)
 
     # Write the bounding box specification
-    dest_fname = f"BoundingBox{fname}.txt"
+    dest_fname = out.joinpath(f"BoundingBox{fname}.txt")
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
         f.write(str(box))
 
     # Write the detected digits
-    dest_fname = f"House{fname}.txt"
+    dest_fname = out.joinpath(f"House{fname}.txt")
     logging.info("Writing '%s'", dest_fname)
     with open(dest_fname, "w") as f:
         f.write(f"Building {digits}")
 
 
-def _write_results_debug(image, processed_img, contour_groups, crops):
+def _write_results_debug(image, processed_img, contour_groups, crops, out):
     """Write debug information to files
 
     Parameters
@@ -401,8 +403,11 @@ def _write_results_debug(image, processed_img, contour_groups, crops):
     img = image.image
 
     # Write original and binary image
-    cv2.imwrite(f"DEBUG_orig_{image.filename}", img)
-    cv2.imwrite(f"DEBUG_bin_{image.filename}", processed_img)
+    dest_fname = str(out.joinpath(f"DEBUG_orig_{image.filename}"))
+    cv2.imwrite(dest_fname, img)
+
+    dest_fname = str(out.joinpath(f"DEBUG_bin_{image.filename}"))
+    cv2.imwrite(dest_fname, processed_img)
 
     # Draw each contour and label them accordingly
     for i, contours in enumerate(contour_groups):
@@ -421,11 +426,13 @@ def _write_results_debug(image, processed_img, contour_groups, crops):
         cv2.putText(img, f"{i}", (x, y), font, 1, colors.BLACK, 2, cv2.LINE_AA)
 
     # Write contours extracted
-    cv2.imwrite(f"DEBUG_contours_{image.filename}", img)
+    dest_fname = str(out.joinpath(f"DEBUG_contours_{image.filename}"))
+    cv2.imwrite(dest_fname, img)
 
     # Write each crop
     for i, cropped in enumerate(crops):
-        cv2.imwrite(f"DEBUG_cropped_{i}_{image.filename}", cropped)
+        dest_fname = str(out.joinpath(f"DEBUG_cropped_{i}_{image.filename}"))
+        cv2.imwrite(dest_fname, cropped)
 
 
 def _stage_1_contour_groups_filter(image, contour_groups):
