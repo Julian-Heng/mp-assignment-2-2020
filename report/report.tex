@@ -8,15 +8,22 @@
     bmargin=20mm
 ]{geometry}
 
+\usepackage[ddmmyyyy]{datetime}
+\usepackage{caption}
 \usepackage{color}
 \usepackage{enumitem}
 \usepackage{fancyhdr}
-\usepackage{inconsolata}
+\usepackage{float}
+\usepackage{graphicx}
 \usepackage{listings}
 \usepackage{listing}
+\usepackage{multicol}
 \usepackage{nameref}
 \usepackage{parskip}
+\usepackage{pgffor}
 \usepackage{tocloft}
+
+\IfFileExists{inconsolata.sty}{\usepackage{inconsolata}}
 
 \newcommand{\code}[1]{\small\texttt{#1}\normalsize}
 
@@ -25,34 +32,195 @@
 \definecolor{gray}{rgb}{0.5,0.5,0.5}
 \definecolor{mauve}{rgb}{0.58,0,0.82}
 
-\lstset
+\lstset{inputpath={{../src/mp_ocr/}}}
+\lstdefinestyle{numbers} {numbers=left, numberstyle=\ttfamily}
+\lstdefinestyle{color}
 {
-    % -- Settings -- %
-    breakatwhitespace=true,
+    commentstyle=\color{dkgreen},
+    keywordstyle=\color{blue},
+    stringstyle=\color{mauve},
+}
+
+\lstdefinestyle{common}
+{
+    breakatwhitespace=false,
     breaklines=true,
     columns=fixed,
     showstringspaces=false,
     xleftmargin=0.65cm,
-    % -- Looks -- %
     basicstyle=\footnotesize\ttfamily,
-    commentstyle=\color{dkgreen},
-    keywordstyle=\color{blue},
-    numberstyle=\ttfamily\color{gray},
-    stringstyle=\color{mauve}
+    tabsize=4,
+    postbreak=\mbox{\textcolor{gray}{$\hookrightarrow$}\space},
+    literate={*}{*\allowbreak}1,
+    numbersep=10pt,
 }
+
+\lstdefinestyle{code} {style=common, style=color, style=numbers}
+\lstdefinestyle{raw} {style=common, style=color}
 
 \fancyhf{}
 \setlength\columnseprule{0.4pt}
 \setlength{\parindent}{0pt}
 
-\title{\huge \textbf{UCP Assignment\\Turtle program}}
+\graphicspath{{../src/}}
+
+\captionsetup{
+    width=.8\linewidth,
+    justification=centering
+}
+
+\title{\huge \textbf{Machine Perception Assignment
+Digits Extraction And Recognition}}
 \author{Julian Heng (19473701)}
-\date{October 22, 2018}
+\date{\today}
 
 \begin{document}
 
 \maketitle
 \tableofcontents
+\newpage
+
+\pagestyle{fancy}
+
+\fancyhf[HL]{\footnotesize{Machine Perception Assignment - Digits Extraction And Recognition}}
+\fancyhf[FC]{\thepage}
+\fancyhf[FL]{\footnotesize{Julian Heng (19473701)}}
+
+\section{Discussion}
+\subsection{Attempts}
+I've started this assignment after completing Sam's OCR challenge, where digit
+recognition was performed with contours and KNN. I've decided to reuse certain
+components from that practical into this assignment. I've only used contours
+since starting this assignment and did not experiment with other methods of
+extracting digits using Harris corners or SIFT because I thought that using
+contours provides very good results.
+
+Most of the time spent on the assignment was extracting the digits from the
+images. The hardest challenge when extracting the digits was trying to isolate
+only the contours that contains the numbers without any contours containing
+noise. I've tried filtering by contour features and have managed to just filter
+only just the relevant contours, but it brought along the issue that the
+filters were too specific to the provided images and will fail on other images.
+Therefore, further ideas needs to be explored and will be discussed in the
+section \nameref{impl}.
+
+I've also used KNN to detect the digits because I've already completed the
+aforementioned practical where KNN was already fully implemented.
+
+
+\subsection{Implementation Details}
+\label{impl}
+
+There are a total 6 steps to extract digits in my implementation:
+\begin{enumerate}
+    \item Process the image using a Gaussian filter and Otsu binary
+        threshold
+    \item Extract the contours for the digits
+    \item Crop the image to the contours
+    \item Process the cropped image using a Gaussian filter and Otsu binary
+        threshold
+    \item Perform connected components on the crop
+    \item Detect the number on each connected component
+\end{enumerate}
+
+
+\subsubsection{Image Preprocessing}
+I've decided to use a Gaussian filter to remove noise from the images. I've
+chosen 5 as my kernel size as any kernel size large than 7 will cause some of
+the digits in the provided images to distort after binary threshold is applied.
+
+\begin{figure}[H]
+    \centering
+    \fbox{\includegraphics[]{{DEBUG_bin_tr06}.jpg}}
+    \caption{An example image after image preprocessing}
+\end{figure}
+
+
+\subsubsection{Contours Extraction}
+
+\begin{figure}[H]
+    \centering
+    \fbox{\includegraphics[]{{DEBUG_contours_tr06}.jpg}}
+    \caption{The contour groups extracted from the image}
+\end{figure}
+
+\begin{figure}[H]
+    \centering{
+        \fbox{\includegraphics[]{{DEBUG_cropped_0_tr06}.jpg}}
+        \fbox{\includegraphics[]{{DEBUG_cropped_1_tr06}.jpg}}
+    }
+    \caption{The individually cropped contour groups from the image}
+\end{figure}
+
+
+\subsubsection{Digit Recognition}
+
+\begin{figure}[H]
+    \centering{
+        \fbox{\includegraphics[]{{DEBUG_component_0_tr06}.jpg}}
+        \fbox{\includegraphics[]{{DEBUG_component_1_tr06}.jpg}}
+    }
+    \caption{The connected components of the digits from the cropped image used to predict}
+\end{figure}
+
+
+\subsection{Results}
+
+
+\newpage
+\section{Source Code}
+
+\subsection{colors.py}
+\fancyhead[HR]{\footnotesize{colors.py}}
+\lstinputlisting[language=Python,style=code]{colors.py}
+\newpage
+
+
+\subsection{image.py}
+\fancyhead[HR]{\footnotesize{image.py}}
+\lstinputlisting[language=Python,style=code]{image.py}
+\newpage
+
+
+\subsection{\_\_init\_\_.py}
+\fancyhead[HR]{\footnotesize{\_\_init\_\_.py}}
+\lstinputlisting[language=Python,style=code]{__init__.py}
+\newpage
+
+
+\subsection{\_\_main\_\_.py}
+\fancyhead[HR]{\footnotesize{\_\_main\_\_.py}}
+\lstinputlisting[language=Python,style=code]{__main__.py}
+\newpage
+
+
+\subsection{mp\_ocr.py}
+\fancyhead[HR]{\footnotesize{mp\_ocr.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr.py}
+\newpage
+
+
+\subsection{ocr.py}
+\fancyhead[HR]{\footnotesize{ocr.py}}
+\lstinputlisting[language=Python,style=code]{ocr.py}
+\newpage
+
+
+\subsection{train/\_\_init\_\_.py}
+\fancyhead[HR]{\footnotesize{train/\_\_init\_\_.py}}
+\lstinputlisting[language=Python,style=code]{train/__init__.py}
+\newpage
+
+
+\subsection{train/knn.py}
+\fancyhead[HR]{\footnotesize{train/knn.py}}
+\lstinputlisting[language=Python,style=code]{train/knn.py}
+\newpage
+
+
+\subsection{utils.py}
+\fancyhead[HR]{\footnotesize{utils.py}}
+\lstinputlisting[language=Python,style=code]{utils.py}
 \newpage
 
 \end{document}
