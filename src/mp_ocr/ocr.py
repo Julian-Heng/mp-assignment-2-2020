@@ -16,8 +16,8 @@ from . import utils, colors
 
 
 def detect(
-        image, knn, knn_res, out=Path(), debug_log=False, debug_files=False
-    ):
+    image, knn, knn_res, out=Path(), debug_log=False, debug_files=False
+):
     """Detects the digits of a given image
 
     General steps are:
