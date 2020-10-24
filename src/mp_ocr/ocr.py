@@ -35,6 +35,9 @@ def detect(image, knn, knn_res, debug=False):
     """
     logging.info("Detecting using image '%s'", image.filename)
 
+    # Start timer
+    start = time.time()
+
     # Image preprocessing and extraction
     processed_img = _preprocess_image(image.image)
     contour_groups = _extract_contours(processed_img, image)
@@ -55,6 +58,10 @@ def detect(image, knn, knn_res, debug=False):
     # Detect digits and write results
     digits = _detect_digits(image, crop, knn, knn_res, debug)
     logging.debug("Detected digits: %s", digits)
+
+    end = time.time()
+    elapsed = (end - start) * 1000
+    logging.info("Finished in %.2fms", elapsed)
 
     _write_results(image, contours, crop, digits)
 
@@ -170,7 +177,7 @@ def _extract_contours(processed_img, image):
     # Print statistics
     total_end = time.time()
     elapsed = (total_end - total_start) * 1000
-    logging.info("Finished filtering (%.2fms)", elapsed)
+    logging.debug("Finished filtering (%.2fms)", elapsed)
 
     return contour_groups
 
