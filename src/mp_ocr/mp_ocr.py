@@ -27,19 +27,35 @@ def parse_args(args):
     parser = ArgumentParser()
 
     # Set up argument parser
-    parser.add_argument("-t", "--train", action="store_true", default=False)
+    parser.add_argument(
+        "-t", "--train", action="store_true", default=False,
+        help="set the program to train on the images"
+    )
     parser.add_argument(
         "-to", "--train-output", action="store", type=Path,
-        default=Path("out.npz")
+        default=Path("out.npz"),
+        help="the output path of the classifier"
     )
     parser.add_argument(
-        "-c", "--classifier", action="store", type=Path, metavar="path"
+        "-c", "--classifier", action="store", type=Path, metavar="path",
+        help="the input path of the classifier"
     )
     parser.add_argument(
-        "-o", "--output", action="store", type=Path, default=Path()
+        "-o", "--output", action="store", type=Path, default=Path(),
+        help="the program output directory"
     )
-    parser.add_argument("-d", "--debug", action="store_true", default=False)
-    parser.add_argument("images", nargs="+", action="store", type=image.Image)
+    parser.add_argument(
+        "-d", "--debug-log", action="store_true", default=False,
+        help="enable debug logging"
+    )
+    parser.add_argument(
+        "-df", "--debug-files", action="store_true", default=False,
+        help="enable writing debug files"
+    )
+    parser.add_argument(
+        "images", nargs="+", action="store", type=image.Image,
+        help="the images used to train or detect"
+    )
 
     # Parse arguments
     return parser.parse_args(args)
