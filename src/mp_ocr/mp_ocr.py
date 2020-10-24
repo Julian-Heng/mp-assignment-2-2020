@@ -74,7 +74,7 @@ def main(args):
 
     # Set up logger
     log_format = "%(filename)s:%(funcName)s:%(lineno)s: %(message)s"
-    level = logging.DEBUG if config.debug else logging.INFO
+    level = logging.DEBUG if config.debug_log else logging.INFO
     logging.basicConfig(level=level, format=log_format)
     logging.debug("Command line arguments: %s", args)
 
@@ -129,5 +129,6 @@ def main(args):
         # Detect digits
         for img in images:
             ocr.detect(
-                img, knn, res, out=config.output, debug=config.debug
+                img, knn, res, out=config.output, debug_log=config.debug_log,
+                debug_files=config.debug_files
             )

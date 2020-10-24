@@ -15,7 +15,9 @@ import numpy as np
 from . import utils, colors
 
 
-def detect(image, knn, knn_res, out=Path(), debug=False):
+def detect(
+        image, knn, knn_res, out=Path(), debug_log=False, debug_files=False
+    ):
     """Detects the digits of a given image
 
     General steps are:
@@ -59,7 +61,7 @@ def detect(image, knn, knn_res, out=Path(), debug=False):
     knn_res = tuple(knn_res[::-1])
 
     # Detect digits and write results
-    digits = _detect_digits(image, crop, knn, knn_res, debug)
+    digits = _detect_digits(image, crop, knn, knn_res, debug_files)
     logging.debug("Detected digits: %s", digits)
 
     end = time.time()
@@ -69,7 +71,7 @@ def detect(image, knn, knn_res, out=Path(), debug=False):
     _write_results(image, contours, crop, digits, out)
 
     # For debugging purposes
-    if debug:
+    if debug_files:
         _write_results_debug(image, processed_img, contour_groups, crops, out)
 
 
@@ -214,7 +216,7 @@ def _crop_contour_groups(image, contour_groups):
     return cropped_groups
 
 
-def _detect_digits(image, crop, knn, knn_res, debug=False):
+def _detect_digits(image, crop, knn, knn_res, debug_files=False):
     """Detect the digits of an cropped image
 
     Parameters
@@ -244,7 +246,7 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         # Prepare the mask for digit detection
         mask = _prepare_digit_mask(mask, coords, knn_res)
 
-        if debug:
+        if debug_files:
             cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
 
         mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
