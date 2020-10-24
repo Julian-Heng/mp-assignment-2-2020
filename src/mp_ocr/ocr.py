@@ -233,6 +233,41 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
     str
         The detected digits
     """
+    # Extract the connected components from the cropped image
+    components, components_coords = _detect_digits_extract_components(crop)
+
+    # Begin detecting the different components
+    digits = list()
+    for i, (mask, coords) in enumerate(zip(components, components_coords)):
+        # Prepare the mask for digit detection
+        mask = _prepare_digit_mask(mask, coords, knn_res)
+
+        if debug:
+            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
+
+        mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
+
+        # Predict
+        ret, _, _, _ = knn.findNearest(mask, k=1)
+        digits.append(str(int(ret)))
+
+    return "".join(digits)
+
+
+def _detect_digits_extract_components(crop):
+    """Extract the connected components from a cropped image
+
+    Parameters
+    ----------
+    crop : ndarray
+        The crop of the image containing the digit to detect
+
+    Returns
+    -------
+    list
+        A list containing a tuple of the connected components and the
+        coordinates of the connected component
+    """
     # Preprocess the cropped image and get the connected components
     img = _preprocess_image(crop)
     count, labels = cv2.connectedComponents(img)
@@ -245,6 +280,13 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         mask[labels == label] = 255
         mask[labels != label] = 0
         coords = cv2.boundingRect(mask)
+
+        # Crop the component
+        x1, y1, w, h = coords
+        x2 = x1 + w
+        y2 = y1 + h
+        mask = mask[y1:y2, x1:x2]
+
         components.append(mask)
         components_coords.append(coords)
 
@@ -253,33 +295,52 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         *sorted(zip(components, components_coords), key=lambda x: x[1][0])
     )
 
-    # Begin detecting the different components
-    digits = list()
-    for i, (mask, coords) in enumerate(zip(components, components_coords)):
-        # Crop the component
-        x1, y1, w, h = coords
-        x2 = x1 + w
-        y2 = y1 + h
-        mask = mask[y1:y2, x1:x2]
+    return components, components_coords
 
-        # Surround the component with a 2px black border
-        mask = cv2.copyMakeBorder(
-            mask, 2, 2, 2, 2, cv2.BORDER_CONSTANT, colors.BLACK
-        )
 
-        # Resize to the training image resolution
-        mask = cv2.resize(mask, knn_res, interpolation=cv2.INTER_NEAREST)
+def _prepare_digit_mask(mask, coords, knn_res):
+    """Process the connected components to resemble the training images
 
-        if debug:
-            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
+    Parameters
+    ----------
+    mask : ndarray
+        The connected component of a digit
+    coords : ndarray
+        The bounding box coordinates of the mask from the original crop
+    knn_res : ndarray
+        The trained image's resolution in a numpy array in the form [w, h]
 
-        mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
+    Returns
+    -------
+    mask : ndarray
+        The processed connected component
+    """
+    knn_w, knn_h = knn_res
+    border_pad = 1
 
-        # Predict
-        ret, _, _, _ = knn.findNearest(mask, k=1)
-        digits.append(str(int(ret)))
+    _, _, w, h = coords
 
-    return "".join(digits)
+    # Detect any pixels on the border of the image
+    borders = (mask[:, 0], mask[:, -1], mask[0, :], mask[-1, :])
+    border_checks = [border_pad if 255 in line else 0 for line in borders]
+
+    # Pad any borders if any pixel touches the edges
+    mask = cv2.copyMakeBorder(mask, *border_checks, cv2.BORDER_CONSTANT, colors.BLACK)
+
+    # Pad both width and height to retain aspect ratio after resizing
+    pad_w = (int(knn_w * (h / knn_h)) - w) // 2
+    pad_h = (int(knn_h * (w / knn_w)) - h) // 2
+
+    pad_w = pad_w if pad_w > 0 else 0
+    pad_h = pad_h if pad_h > 0 else 0
+
+    mask = cv2.copyMakeBorder(
+        mask, pad_h, pad_h, pad_w, pad_w, cv2.BORDER_CONSTANT, colors.BLACK
+    )
+
+    # Resize to the training image resolution
+    mask = cv2.resize(mask, knn_res, interpolation=cv2.INTER_NEAREST)
+    return mask
 
 
 def _write_results(image, contours, crop, digits):
