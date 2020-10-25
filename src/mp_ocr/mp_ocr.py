@@ -97,7 +97,7 @@ def main(args):
 
         images = config.images
 
-        train.knn.make_from_images(images, outfile)
+        train.knn.make_from_images(images, outfile, config.debug_files)
 
     else:
         # Program is otherwise running in classifying mode, images are used for

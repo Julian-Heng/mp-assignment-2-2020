@@ -4,13 +4,15 @@
 
 import logging
 
+from pathlib import Path
+
 import cv2
 import numpy as np
 
 from ..utils import list_contains_same_elements
 
 
-def make_from_images(images, outfile=None):
+def make_from_images(images, outfile=None, debug=False):
     """Makes a knn classifier from image
 
     Parameters
@@ -19,6 +21,8 @@ def make_from_images(images, outfile=None):
         A list of images to train against
     outfile : Path, optional
         The destination file for storing the training and label data
+    debug : bool, optional
+        Toggles debug mode
 
     Returns
     -------
@@ -42,7 +46,8 @@ def make_from_images(images, outfile=None):
         )
 
     # Process the images
-    train = np.array([_preprocess_image(i) for i in images])
+    out = outfile.parent
+    train = np.array([_preprocess_image(i, out, debug) for i in images])
     labels = np.array([[int(i.parentname)] for i in images])
 
     knn = make_from_training_data(train, labels)
@@ -103,13 +108,17 @@ def make_from_training_data(train, labels):
     return knn
 
 
-def _preprocess_image(image):
+def _preprocess_image(image, out=Path(), debug=False):
     """Prepare the image for training
 
     Parameters
     ----------
     img : ndarray
         The image as a ndarray to perform the preprocessing on
+    out : Path, optional
+        The output directory to write results to
+    debug : bool, optional
+        Toggles debug mode
 
     Returns
     -------
@@ -134,6 +143,21 @@ def _preprocess_image(image):
 
     # Mask of the label and convert it to a single dimensional array
     img[labels == idx] = 255
+
+    # For debugging purposes
+    if debug:
+        fname = out.joinpath(f"DEBUG_training_orig_{image.filename}")
+        logging.debug("Writing '%s'", fname)
+        cv2.imwrite(str(fname), image.image)
+
+        fname = out.joinpath(f"DEBUG_training_bin_{image.filename}")
+        logging.debug("Writing '%s'", fname)
+        cv2.imwrite(str(fname), src_img)
+
+        fname = out.joinpath(f"DEBUG_training_{image.filename}")
+        logging.debug("Writing '%s'", fname)
+        cv2.imwrite(str(fname), img)
+
     img = img.reshape(-1, area).astype(np.float32)
     img = np.squeeze(img)
 
