@@ -640,7 +640,7 @@ def _stage_2_contour_group_filter(contours, distance_limit):
         "Distance between contour %d and %d is not within the limit (%.2fpx)"
     )
 
-    # Check if there's more than 1 contour
+    # Check if there's only 1 contour
     if len(contours) < 2:
         logging.debug("Not enough contours in group to compare. Skipping...")
 
@@ -654,8 +654,8 @@ def _stage_2_contour_group_filter(contours, distance_limit):
         approx_1 = utils.get_contour_approx(contours[i])
         approx_2 = utils.get_contour_approx(contours[j])
 
-        # Get the smallest possible points between all points of the 2 contour
-        # approximates
+        # Get the smallest possible distances between all points of the 2
+        # contour approximates
         logging.debug(info_fmt, i, j)
         contour_distances = [
             (i, j, np.linalg.norm(p2 - p1))
@@ -742,7 +742,7 @@ def _stage_3_contour_group_filter(contours):
         "Angle between contour %d and %d is not in range (%.2f degrees)"
     )
 
-    # Check if there's more than 1 contour
+    # Check if there's only 1 contour
     if len(contours) < 2:
         logging.debug("Not enough contours to compare. Skipping...")
 
