@@ -17,7 +17,7 @@ main()
 
     shopt -s globstar
     shopt -s nullglob
-    training_files=("${train_dir}"/**/*.{jpg,png})
+    training_files=("${train_dir}"/[0-9]/**/*.{jpg,png})
     testing_files=("${test_dir}"/**/*.{jpg,png})
     val_files=("${val_dir}"/**/*.{jpg,png})
     shopt -u globstar
