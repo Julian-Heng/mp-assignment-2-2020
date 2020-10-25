@@ -1,4 +1,4 @@
-\documentclass[a4paper, 12pt, titlepage]{article}
+\documentclass[a4paper, 11pt, titlepage]{article}
 
 \usepackage[
     a4paper,
@@ -9,6 +9,7 @@
 ]{geometry}
 
 \usepackage[ddmmyyyy]{datetime}
+\usepackage{array}
 \usepackage{caption}
 \usepackage{color}
 \usepackage{enumitem}
@@ -21,6 +22,7 @@
 \usepackage{nameref}
 \usepackage{parskip}
 \usepackage{pgffor}
+\usepackage{titlesec}
 \usepackage{tocloft}
 
 \IfFileExists{inconsolata.sty}{\usepackage{inconsolata}}
@@ -32,7 +34,7 @@
 \definecolor{gray}{rgb}{0.5,0.5,0.5}
 \definecolor{mauve}{rgb}{0.58,0,0.82}
 
-\lstset{inputpath={{../src/mp_ocr/}}}
+\lstset{inputpath={{../src/}}}
 \lstdefinestyle{numbers} {numbers=left, numberstyle=\ttfamily}
 \lstdefinestyle{color}
 {
@@ -65,9 +67,17 @@
 \graphicspath{{../src/}}
 
 \captionsetup{
-    width=.8\linewidth,
+    width=.85\linewidth,
     justification=centering
 }
+
+\setcounter{tocdepth}{4}
+\setcounter{secnumdepth}{4}
+
+\titleformat{\paragraph}
+{\normalfont\normalsize\bfseries}{\theparagraph}{1em}{}
+\titlespacing*{\paragraph}
+{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
 
 \title{\huge \textbf{Machine Perception Assignment
 Digits Extraction And Recognition}}
@@ -87,12 +97,19 @@ Digits Extraction And Recognition}}
 \fancyhf[FL]{\footnotesize{Julian Heng (19473701)}}
 
 \section{Discussion}
+\fancyhead[HR]{\footnotesize{Discussion}}
+
 \subsection{Attempts}
+
+In this assignment, I've managed to train on the provided digits to create a
+digits classifier, extracted digits from the provided digits and successfully
+managed to predict the correct digits for each extracted area.
+
 I've started this assignment after completing Sam's OCR challenge, where digit
 recognition was performed with contours and KNN. I've decided to reuse certain
 components from that practical into this assignment. I've only used contours
 since starting this assignment and did not experiment with other methods of
-extracting digits using Harris corners or SIFT because I thought that using
+extracting digits using Harris corners or SIFT because I think that using
 contours provides very good results.
 
 Most of the time spent on the assignment was extracting the digits from the
@@ -102,16 +119,53 @@ noise. I've tried filtering by contour features and have managed to just filter
 only just the relevant contours, but it brought along the issue that the
 filters were too specific to the provided images and will fail on other images.
 Therefore, further ideas needs to be explored and will be discussed in the
-section \nameref{impl}.
+section \nameref{impl-classifier}.
 
 I've also used KNN to detect the digits because I've already completed the
 aforementioned practical where KNN was already fully implemented.
 
 
 \subsection{Implementation Details}
-\label{impl}
 
-There are a total 6 steps to extract digits in my implementation:
+\subsubsection{Training Implementation}
+\label{impl-train}
+
+The implementation of the digits training utilises the OpenCV
+\code{ml\_KNearest} object class to train and detect digits. The folder
+structure of the provided images makes it so that it is easy to create the
+labels for each of the training images. Each of the images needs to be
+preprocessed before it is trained upon.
+
+The preprocessing performs an Otsu binary threshold before connected components
+is applied. I've decided to use connected components instead of just using the
+binary image to remove any possible noise. Therefore, we assume that the digit
+will be the largest component. Hence, we extract only the largest component by
+area.
+
+\foreach \x in {9-7,3-11,2-15}
+{
+    \begin{figure}[H]
+        \centering{
+            \fbox{\includegraphics[]{{DEBUG_training_orig_digit\x}.jpg}}
+            \fbox{\includegraphics[]{{DEBUG_training_bin_digit\x}.jpg}}
+            \fbox{\includegraphics[]{{DEBUG_training_digit\x}.jpg}}
+        }
+        \caption{The preprocessing of the training image `digit\x.jpg'}
+    \end{figure}
+}
+
+This extract is then flattened into a single dimension array to be trained by
+the KNN. This is repeated throughout all of the images provided to the program
+and outputs the training data and training labels as a Numpy array export file.
+This file is then loaded when the program is running under classifying mode in
+order to predict the digits.
+
+
+\subsubsection{Classifier Implementation}
+\label{impl-classifier}
+
+There are a total 6 steps to extract and classify digits in my implementation:
+
 \begin{enumerate}
     \item Process the image using a Gaussian filter and Otsu binary
         threshold
@@ -124,19 +178,83 @@ There are a total 6 steps to extract digits in my implementation:
 \end{enumerate}
 
 
-\subsubsection{Image Preprocessing}
+\paragraph{Image Preprocessing}
+\label{impl-img-preprocessing}
+
 I've decided to use a Gaussian filter to remove noise from the images. I've
 chosen 5 as my kernel size as any kernel size large than 7 will cause some of
-the digits in the provided images to distort after binary threshold is applied.
+the digits in the provided images to distort after binary threshold is applied,
+thus causing the contours extraction to not be able to extract the full digit.
 
 \begin{figure}[H]
     \centering
     \fbox{\includegraphics[]{{DEBUG_bin_tr06}.jpg}}
-    \caption{An example image after image preprocessing}
+    \caption{An example image after preprocessing is applied}
 \end{figure}
 
 
-\subsubsection{Contours Extraction}
+\paragraph{Contours Extraction}
+
+Using the preprocessed image from before, the contours is then found using the
+OpenCV \code{findContours} function. Once all of the contours is found, all of
+the contours that are not part of the main digits needs to be removed.
+
+There are 3 different stages I've implemented to attempt to extract only the
+contours containing the digits:
+
+\begin{enumerate}
+    \item Filter contours depending on their features, such as width, height
+        and area
+    \item Group contours by distance
+    \item Group contours by angles
+\end{enumerate}
+
+The first stage involves using the OpenCV functions \code{boundingRect} and
+\code{contourArea} to get the Cartesian coordinates and the contour dimensions
+as well as the area of the contour respectively. We then check that:
+
+\begin{enumerate}
+    \item The contour's height is more than the width
+    \item The contour's aspect ratio is within the threshold
+    \item The contour's height to image height ratio is not too large
+    \item The contour's width to image width ratio is not too large
+    \item The contour's area is not less than 70 pixels
+    \item The contour's area to image area is within the threshold
+    \item The contour is not along the edges of the image
+\end{enumerate}
+
+If any one of these conditions fails, then the contour is filtered.
+
+The second stage involves grouping the contours by their distances between
+other contours. The main idea behind this stage is that the digits are closer
+to other digits than other contours containing noise. Hence, all of the
+relevant digit contours will be part of the same group, with all the contours
+containing noise belonging to a different group.
+
+In order to achieve this stage, for each possible contour pairing in the list
+of filtered contours, if the shortest distance is within $\frac{1}{12}$ of the
+image's hypotenuse, then the contour pairing will be grouped together. If
+either contours belongs to another group, the groups will be conjoined.
+
+The third stage is very similar to the second stage. Instead of grouping
+contours by distance, the contours will be grouped by the angle of the line
+between their centers. The main idea behind this stage is that the digits are
+along a line. By grouping contours that fall within a straight horizontal line,
+noisy contours not within the same line as the digits will be separate.
+
+The issue with this idea is that it works well if the plate containing the
+digits are perpendicular to the camera. If the plates containing the digits are
+taken at an angle, then the digits may be grouped into different groups. This,
+however, separate any contours within the groups that are directly below the
+digit contours.
+
+After all 3 stages passes, the remaining contours will be the digits and, if
+any, a small amount of noisy contours. Out of the possible contour groups,
+the program will select the largest contour groups, under the assumption that
+the contour group containing the digits has the largest area. This is to ensure
+that the correct contour group is selected, but would only limit to detecting
+only one set of digits per image.
+
 
 \begin{figure}[H]
     \centering
@@ -153,74 +271,162 @@ the digits in the provided images to distort after binary threshold is applied.
 \end{figure}
 
 
-\subsubsection{Digit Recognition}
+\paragraph{Digit Recognition}
+
+Using the largest contour group, the image is cropped to contain the largest
+contour. The same image preprocessing from \nameref{impl-img-preprocessing}
+will be applied. Connected components is then used to get each individual
+digits of the binary image.
+
+For each individual component mask, detect if there are any pixels that are on
+the edge of the component. If there are, then apply a single pixel black border
+on the edge containing that pixel. Then, more additional padding will be
+applied to the top and bottom of the component mask such that the mask will
+have the same aspect ratio as the training images.
+
+Finally, the mask is resized to the training image's size. Using the KNN
+created in section \nameref{impl-train}, \code{findNearest}, with $k = 1$ is
+used to predict what the digit is.
+
 
 \begin{figure}[H]
     \centering{
         \fbox{\includegraphics[]{{DEBUG_component_0_tr06}.jpg}}
         \fbox{\includegraphics[]{{DEBUG_component_1_tr06}.jpg}}
     }
-    \caption{The connected components of the digits from the cropped image used to predict}
+    \caption{
+        The connected components of the digits from the cropped image used to
+        predict
+    }
 \end{figure}
 
 
 \subsection{Results}
+
+Using the provided validation images, the program outputs these results:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{
+            | >{\centering\arraybackslash}m{0.3\linewidth}
+            | >{\centering\arraybackslash}m{0.3\linewidth}
+            | >{\centering\arraybackslash}m{0.3\linewidth} |
+        }
+        \hline DetectedAreaXX.jpg & BoundingBoxXX.txt & HouseXX.txt \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea01}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox01.txt} &
+            \lstinputlisting[style=raw]{House01.txt} \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea02}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox02.txt} &
+            \lstinputlisting[style=raw]{House02.txt} \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea03}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox03.txt} &
+            \lstinputlisting[style=raw]{House03.txt} \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea04}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox04.txt} &
+            \lstinputlisting[style=raw]{House04.txt} \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea05}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox05.txt} &
+            \lstinputlisting[style=raw]{House05.txt} \\
+        \hline \includegraphics[
+            width=\linewidth,
+            height=0.1\textheight,
+            keepaspectratio,
+        ]{{DetectedArea06}.jpg} &
+            \lstinputlisting[style=raw]{BoundingBox06.txt} &
+            \lstinputlisting[style=raw]{House06.txt} \\
+        \hline
+    \end{tabular}
+\end{table}
+
+From these results, we can conclude that the program works really well with
+the provided validation images. It is able to correctly extract the digits,
+as well as correctly classify each digit.
 
 
 \newpage
 \section{Source Code}
 
 \subsection{colors.py}
-\fancyhead[HR]{\footnotesize{colors.py}}
-\lstinputlisting[language=Python,style=code]{colors.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - colors.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/colors.py}
 \newpage
 
 
 \subsection{image.py}
-\fancyhead[HR]{\footnotesize{image.py}}
-\lstinputlisting[language=Python,style=code]{image.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - image.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/image.py}
 \newpage
 
 
 \subsection{\_\_init\_\_.py}
-\fancyhead[HR]{\footnotesize{\_\_init\_\_.py}}
-\lstinputlisting[language=Python,style=code]{__init__.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - \_\_init\_\_.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/__init__.py}
 \newpage
 
 
 \subsection{\_\_main\_\_.py}
-\fancyhead[HR]{\footnotesize{\_\_main\_\_.py}}
-\lstinputlisting[language=Python,style=code]{__main__.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - \_\_main\_\_.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/__main__.py}
 \newpage
 
 
 \subsection{mp\_ocr.py}
-\fancyhead[HR]{\footnotesize{mp\_ocr.py}}
-\lstinputlisting[language=Python,style=code]{mp_ocr.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - mp\_ocr.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/mp_ocr.py}
 \newpage
 
 
 \subsection{ocr.py}
-\fancyhead[HR]{\footnotesize{ocr.py}}
-\lstinputlisting[language=Python,style=code]{ocr.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - ocr.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/ocr.py}
 \newpage
 
 
 \subsection{train/\_\_init\_\_.py}
-\fancyhead[HR]{\footnotesize{train/\_\_init\_\_.py}}
-\lstinputlisting[language=Python,style=code]{train/__init__.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - train/\_\_init\_\_.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/train/__init__.py}
 \newpage
 
 
 \subsection{train/knn.py}
-\fancyhead[HR]{\footnotesize{train/knn.py}}
-\lstinputlisting[language=Python,style=code]{train/knn.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - train/knn.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/train/knn.py}
 \newpage
 
 
 \subsection{utils.py}
-\fancyhead[HR]{\footnotesize{utils.py}}
-\lstinputlisting[language=Python,style=code]{utils.py}
+
+\fancyhead[HR]{\footnotesize{Source Code - utils.py}}
+\lstinputlisting[language=Python,style=code]{mp_ocr/utils.py}
 \newpage
 
 \end{document}
