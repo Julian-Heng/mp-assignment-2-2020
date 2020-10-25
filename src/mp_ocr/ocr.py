@@ -15,9 +15,7 @@ import numpy as np
 from . import utils, colors
 
 
-def detect(
-    image, knn, knn_res, out=Path(), debug_log=False, debug_files=False
-):
+def detect(image, knn, knn_res, out=Path(), debug=False):
     """Detects the digits of a given image
 
     General steps are:
@@ -35,6 +33,8 @@ def detect(
         The opencv knn model used to predict the digits
     knn_res : ndarray
         The trained image's resolution in a numpy array in the form [w, h]
+    out : Path, optional
+        The output directory to write results to
     debug : bool, optional
         Toggles debug mode
     """
@@ -61,7 +61,7 @@ def detect(
     knn_res = tuple(knn_res[::-1])
 
     # Detect digits and write results
-    digits = _detect_digits(image, crop, knn, knn_res, debug_files)
+    digits = _detect_digits(image, crop, knn, knn_res, debug)
     logging.debug("Detected digits: %s", digits)
 
     end = time.time()
@@ -71,7 +71,7 @@ def detect(
     _write_results(image, contours, crop, digits, out)
 
     # For debugging purposes
-    if debug_files:
+    if debug:
         _write_results_debug(image, processed_img, contour_groups, crops, out)
 
 
@@ -216,7 +216,7 @@ def _crop_contour_groups(image, contour_groups):
     return cropped_groups
 
 
-def _detect_digits(image, crop, knn, knn_res, debug_files=False):
+def _detect_digits(image, crop, knn, knn_res, debug=False):
     """Detect the digits of an cropped image
 
     Parameters
@@ -246,7 +246,7 @@ def _detect_digits(image, crop, knn, knn_res, debug_files=False):
         # Prepare the mask for digit detection
         mask = _prepare_digit_mask(mask, coords, knn_res)
 
-        if debug_files:
+        if debug:
             cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
 
         mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
@@ -360,6 +360,8 @@ def _write_results(image, contours, crop, digits, out):
         The crop of the image containing the digit to detect
     digits : str
         The detected digits
+    out : Path
+        The output directory to write results to
     """
     # Extract image number from filename
     try:
@@ -401,6 +403,8 @@ def _write_results_debug(image, processed_img, contour_groups, crops, out):
         List containing lists of contours
     crops : list
         The list of crops of the image derived from the contour groups
+    out : Path
+        The output directory to write results to
     """
     img = image.image
 

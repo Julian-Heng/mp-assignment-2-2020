@@ -129,6 +129,5 @@ def main(args):
         # Detect digits
         for img in images:
             ocr.detect(
-                img, knn, res, out=config.output, debug_log=config.debug_log,
-                debug_files=config.debug_files
+                img, knn, res, out=config.output, debug=config.debug_files
             )
