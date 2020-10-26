@@ -1,4 +1,4 @@
-\documentclass[a4paper, 11pt, titlepage]{article}
+\documentclass[a4paper, 10pt, titlepage]{article}
 
 \usepackage[
     a4paper,
@@ -9,8 +9,11 @@
 ]{geometry}
 
 \usepackage[ddmmyyyy]{datetime}
+\usepackage[export]{adjustbox}
+\usepackage[hidelinks]{hyperref}
 \usepackage{array}
 \usepackage{caption}
+\usepackage{cite}
 \usepackage{color}
 \usepackage{enumitem}
 \usepackage{fancyhdr}
@@ -18,12 +21,14 @@
 \usepackage{graphicx}
 \usepackage{listings}
 \usepackage{listing}
+\usepackage{longtable}
 \usepackage{multicol}
 \usepackage{nameref}
 \usepackage{parskip}
 \usepackage{pgffor}
 \usepackage{titlesec}
 \usepackage{tocloft}
+\usepackage{url}
 
 \IfFileExists{inconsolata.sty}{\usepackage{inconsolata}}
 
@@ -136,11 +141,11 @@ structure of the provided images makes it so that it is easy to create the
 labels for each of the training images. Each of the images needs to be
 preprocessed before it is trained upon.
 
-The preprocessing performs an Otsu binary threshold before connected components
-is applied. I've decided to use connected components instead of just using the
-binary image to remove any possible noise. Therefore, we assume that the digit
-will be the largest component. Hence, we extract only the largest component by
-area.
+The preprocessing performs an Otsu binary threshold (\code{cv2.threshold})
+before connected components is applied. Connected components is used instead of
+using the unmodified binary image to remove any possible noise from the
+threshold. Therefore, we assume that the digit will be the largest component.
+Hence, we extract only the largest component by area.
 
 \foreach \x in {9-7,3-11,2-15}
 {
@@ -164,7 +169,8 @@ order to predict the digits.
 \subsubsection{Classifier Implementation}
 \label{impl-classifier}
 
-There are a total 6 steps to extract and classify digits in my implementation:
+There are a total 6 steps to extract and classify digits in the program's
+implementation:
 
 \begin{enumerate}
     \item Process the image using a Gaussian filter and Otsu binary
@@ -174,21 +180,29 @@ There are a total 6 steps to extract and classify digits in my implementation:
     \item Process the cropped image using a Gaussian filter and Otsu binary
         threshold
     \item Perform connected components on the crop
-    \item Detect the number on each connected component
+    \item Detect and predict the digit on each connected component
 \end{enumerate}
 
 
 \paragraph{Image Preprocessing}
 \label{impl-img-preprocessing}
 
-I've decided to use a Gaussian filter to remove noise from the images. I've
-chosen 5 as my kernel size as any kernel size large than 7 will cause some of
+OpenCV's Gaussian filter (\code{cv2.GaussianFilter}) is applied to remove noise
+from the images. The reduction of noise in the image will overall improve the
+Otsu binary thresholding (\code{cv2.threshold}) results when applied. The
+Gaussian Filter kernel is 5 as any kernel size large than 7 will cause some of
 the digits in the provided images to distort after binary threshold is applied,
 thus causing the contours extraction to not be able to extract the full digit.
 
+Otsu thresholding is the prefered method because Otsu thresholding allows using
+a threshold value that minimises the weighted within-class variance. Therefore,
+the threshold value depends on the images and the distribution of the
+intensities of the different pixels within the image.
+
+
 \begin{figure}[H]
     \centering
-    \fbox{\includegraphics[]{{DEBUG_bin_tr06}.jpg}}
+    \fbox{\includegraphics[scale=0.9]{{DEBUG_bin_tr06}.jpg}}
     \caption{An example image after preprocessing is applied}
 \end{figure}
 
@@ -199,8 +213,8 @@ Using the preprocessed image from before, the contours is then found using the
 OpenCV \code{findContours} function. Once all of the contours is found, all of
 the contours that are not part of the main digits needs to be removed.
 
-There are 3 different stages I've implemented to attempt to extract only the
-contours containing the digits:
+In order to extract the contours containing the digits, the program implements
+these 3 stages:
 
 \begin{enumerate}
     \item Filter contours depending on their features, such as width, height
@@ -255,20 +269,44 @@ the contour group containing the digits has the largest area. This is to ensure
 that the correct contour group is selected, but would only limit to detecting
 only one set of digits per image.
 
+The inspiration for filtering the contours by size and features comes from this
+StackOverflow answer\cite{impl-1}. Within the post, it is suggested to ``erase
+contours with very small area'' as well as ``erase contours with low aspect
+ratio''. The first stage checks if the contours are within the minimum size
+allowed, as well as the ratio is what we expect the digits to be around.
+
+The idea for the second and third stages are ideas that I've come up with and
+implemented fully.
+
 
 \begin{figure}[H]
     \centering
-    \fbox{\includegraphics[]{{DEBUG_contours_tr06}.jpg}}
+    \fbox{\includegraphics[scale=0.9]{{DEBUG_contours_tr06}.jpg}}
     \caption{The contour groups extracted from the image}
 \end{figure}
 
 \begin{figure}[H]
     \centering{
-        \fbox{\includegraphics[]{{DEBUG_cropped_0_tr06}.jpg}}
-        \fbox{\includegraphics[]{{DEBUG_cropped_1_tr06}.jpg}}
+        \fbox{\includegraphics[scale=0.9]{{DEBUG_cropped_0_tr06}.jpg}}
+        \fbox{\includegraphics[scale=0.9]{{DEBUG_cropped_1_tr06}.jpg}}
     }
     \caption{The individually cropped contour groups from the image}
 \end{figure}
+
+Out of the three stages, the first stage is the filter that removes the most
+amount of contours from the list of found contours. This is beneficial for
+stage two and three because both those stages have a time complexity of
+$O(n^2)$, where as stage one has a time complexity of $O(n)$. Since stage one
+filters contours before stage two and stage three, the running time for both
+these stages decreases exponentially as more contours are removed. Therefore,
+stage one is rather aggressive when filtering invalid the contours.
+
+This aggressive nature brings forth issues where the filtering is overfitting
+the provided images given to extract the digits. Overfitting in a way where it
+works best on the provided images, but works less optimally on other images of
+similar types. Under extended testing of extra images of house numbers searched
+on the internet, it is observed that it is able to extract some digits, fail to
+extract others and included some noise along with the extracts.
 
 
 \paragraph{Digit Recognition}
@@ -278,10 +316,37 @@ contour. The same image preprocessing from \nameref{impl-img-preprocessing}
 will be applied. Connected components is then used to get each individual
 digits of the binary image.
 
+Since Otsu binary thresholding is applied again on the cropped image, it is
+possible that the resulting binary threshold image is different to the binary
+threshold image from the image preprocessing when extracting the contours. This
+can result in better binary images as the histograms differ between the cropped
+image and the original image. Hence, we preprocess the image twice to get
+better results overall when extracting the digits for prediction.
+
+\begin{figure}[H]
+    \centering{
+        \fbox{\adjincludegraphics[
+            trim={{0.25\width} {0.66\height} {0.25\width} {0.1\height}},
+            width=0.4\linewidth,
+            keepaspectratio,
+            clip,
+        ]{{DEBUG_bin_val04}.jpg}}
+        \fbox{\includegraphics[
+            width=0.4\linewidth,
+            keepaspectratio,
+        ]{{DEBUG_cropped_bin_val04}.jpg}}
+    }
+    \caption{
+        The preprocessed image of `val04.jpg' during the extraction of the
+        contours and the classification of the cropped. The right image is
+        cropped for visibility. Note the difference in the second digit.
+    }
+\end{figure}
+
 For each individual component mask, detect if there are any pixels that are on
-the edge of the component. If there are, then apply a single pixel black border
-on the edge containing that pixel. Then, more additional padding will be
-applied to the top and bottom of the component mask such that the mask will
+the edge of the component. If there are, then a single pixel black border is
+applied on the edge containing that pixel. Then, more additional padding will
+be applied to the top and bottom of the component mask such that the mask will
 have the same aspect ratio as the training images.
 
 Finally, the mask is resized to the training image's size. Using the KNN
@@ -303,65 +368,72 @@ used to predict what the digit is.
 
 \subsection{Results}
 
-Using the provided validation images, the program outputs these results:
+\begin{longtable}{
+    | >{\centering\arraybackslash}m{0.02\columnwidth}
+    | >{\centering\arraybackslash}m{0.28\columnwidth}
+    | >{\centering\arraybackslash}m{0.28\columnwidth}
+    | >{\centering\arraybackslash}m{0.28\columnwidth} |
+}
+    \hline & DetectedAreaXX.jpg & BoundingBoxXX.txt & HouseXX.txt \\
+    \hline 01 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea01}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox01.txt} &
+        \lstinputlisting[style=raw]{House01.txt} \\
+    \hline 02 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea02}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox02.txt} &
+        \lstinputlisting[style=raw]{House02.txt} \\
+    \hline 03 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea03}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox03.txt} &
+        \lstinputlisting[style=raw]{House03.txt} \\
+    \hline 04 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea04}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox04.txt} &
+        \lstinputlisting[style=raw]{House04.txt} \\
+    \hline 05 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea05}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox05.txt} &
+        \lstinputlisting[style=raw]{House05.txt} \\
+    \hline 06 & \includegraphics[
+        width=\linewidth,
+        height=0.1\textheight,
+        keepaspectratio,
+    ]{{DetectedArea06}.jpg} &
+        \lstinputlisting[style=raw]{BoundingBox06.txt} &
+        \lstinputlisting[style=raw]{House06.txt} \\
+    \hline
+    \caption{
+        The results of the validation files
+    }
+\end{longtable}
 
-\begin{table}[H]
-    \centering
-    \begin{tabular}{
-            | >{\centering\arraybackslash}m{0.3\linewidth}
-            | >{\centering\arraybackslash}m{0.3\linewidth}
-            | >{\centering\arraybackslash}m{0.3\linewidth} |
-        }
-        \hline DetectedAreaXX.jpg & BoundingBoxXX.txt & HouseXX.txt \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea01}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox01.txt} &
-            \lstinputlisting[style=raw]{House01.txt} \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea02}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox02.txt} &
-            \lstinputlisting[style=raw]{House02.txt} \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea03}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox03.txt} &
-            \lstinputlisting[style=raw]{House03.txt} \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea04}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox04.txt} &
-            \lstinputlisting[style=raw]{House04.txt} \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea05}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox05.txt} &
-            \lstinputlisting[style=raw]{House05.txt} \\
-        \hline \includegraphics[
-            width=\linewidth,
-            height=0.1\textheight,
-            keepaspectratio,
-        ]{{DetectedArea06}.jpg} &
-            \lstinputlisting[style=raw]{BoundingBox06.txt} &
-            \lstinputlisting[style=raw]{House06.txt} \\
-        \hline
-    \end{tabular}
-\end{table}
+From these results, we can conclude that the program works well with the
+provided validation images. It is able to correctly extract the digits, as well
+as correctly classify each digit. It is important to note, however, that while
+this program is able correctly predict these images, it is not guaranteed to be
+able to extract and detect digits with 100\% accuracy.
 
-From these results, we can conclude that the program works really well with
-the provided validation images. It is able to correctly extract the digits,
-as well as correctly classify each digit.
+
+\subsection{References}
+
+\bibliographystyle{plainurl}
+\bibliography{report.bib}
 
 
 \newpage
