@@ -61,7 +61,7 @@ def detect(image, knn, knn_res, out=Path(), debug=False):
     knn_res = tuple(knn_res[::-1])
 
     # Detect digits and write results
-    digits = _detect_digits(image, crop, knn, knn_res, debug)
+    digits = _detect_digits(image, crop, knn, knn_res, out, debug)
     logging.debug("Detected digits: %s", digits)
 
     end = time.time()
@@ -222,7 +222,7 @@ def _crop_contour_groups(image, contour_groups):
     return cropped_groups
 
 
-def _detect_digits(image, crop, knn, knn_res, debug=False):
+def _detect_digits(image, crop, knn, knn_res, out=Path(), debug=False):
     """Detect the digits of an cropped image
 
     Parameters
@@ -235,6 +235,8 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         The opencv knn model used to predict the digits
     knn_res : ndarray
         The trained image's resolution in a numpy array in the form [w, h]
+    out : Path
+        The output directory to write results to
     debug : bool, optional
         Toggles debug mode
 
@@ -244,7 +246,13 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         The detected digits
     """
     # Extract the connected components from the cropped image
-    components, components_coords = _detect_digits_extract_components(crop)
+    img, components, components_coords = _detect_digits_extract_components(
+        crop
+    )
+
+    if debug:
+        dest_fname = str(out.joinpath(f"DEBUG_cropped_bin_{image.filename}"))
+        cv2.imwrite(dest_fname, img)
 
     # Begin detecting the different components
     digits = list()
@@ -253,7 +261,9 @@ def _detect_digits(image, crop, knn, knn_res, debug=False):
         mask = _prepare_digit_mask(mask, coords, knn_res)
 
         if debug:
-            cv2.imwrite(f"DEBUG_component_{i}_{image.filename}", mask)
+            dest_fname = f"DEBUG_component_{i}_{image.filename}"
+            dest_fname = str(out.joinpath(dest_fname))
+            cv2.imwrite(dest_fname, mask)
 
         mask = mask.reshape(-1, np.prod(knn_res)).astype(np.float32)
 
@@ -274,9 +284,12 @@ def _detect_digits_extract_components(crop):
 
     Returns
     -------
+    img : ndarray
+        The processed binary of the cropped image
     list
-        A list containing a tuple of the connected components and the
-        coordinates of the connected component
+        A list containing the connected components
+    list
+        A list containing coordinates of the connected component
     """
     # Preprocess the cropped image and get the connected components
     img = _preprocess_image(crop)
@@ -303,7 +316,7 @@ def _detect_digits_extract_components(crop):
         *sorted(zip(components, components_coords), key=lambda x: x[1][0])
     )
 
-    return components, components_coords
+    return img, components, components_coords
 
 
 def _prepare_digit_mask(mask, coords, knn_res):
