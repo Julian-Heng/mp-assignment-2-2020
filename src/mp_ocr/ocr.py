@@ -479,9 +479,11 @@ def _stage_1_contour_groups_filter(image, contour_groups):
 
     filtered_contour_groups = list()
 
+    # For each contour groups
     for contours in contour_groups:
         filtered_contours = list()
         for i, contour in enumerate(contours):
+            # Determine if the contour is good
             is_good, msg = _is_good_contour(contour, height, width, area)
             if is_good:
                 logging.debug("Contour %d is good", i)
