@@ -48,27 +48,9 @@ def is_around(num, target, tolerance=0):
     bool
         Determines if the given number is around a number
     """
-    return is_between(num, target - tolerance, target + tolerance)
-
-
-def is_between(num, low, high):
-    """Returns true if a number if between 2 numbers
-
-    Parameters
-    ----------
-    num : int
-        The input number
-    low : int
-        The lower bound number
-    high : int
-        The upper bound number
-
-    Returns
-    -------
-    bool
-        Determines if the given number is within the lower and upper bounds
-    """
-    return num > low and high > num
+    low = target - tolerance
+    high = target + tolerance
+    return high > num and num > low
 
 
 def angle_of_points(p1, p2):
@@ -159,23 +141,12 @@ def get_contour_group_bounding_rect(contours):
     tuple
         The bounding rectangle in the form (x, y, w, h)
     """
-    x1 = sys.maxsize
-    x2 = -sys.maxsize
-    y1 = sys.maxsize
-    y2 = -sys.maxsize
-
-    # For each contour, find the largest and smallest x and y coordinate
-    for contour in contours:
-        cx1, cy1, cw, ch = cv2.boundingRect(contour)
-        cx2 = cx1 + cw
-        cy2 = cy1 + ch
-
-        x1 = min(x1, cx1)
-        x2 = max(x2, cx2)
-        y1 = min(y1, cy1)
-        y2 = max(y2, cy2)
-
-    return (x1, y1, x2 - x1, y2 - y1)
+    b = np.array([rect_to_coords(cv2.boundingRect(i)) for i in contours])
+    x1 = np.min(b[:,0])
+    y1 = np.min(b[:,1])
+    x2 = np.max(b[:,2])
+    y2 = np.max(b[:,3])
+    return x1, y1, x2 - x1, y2 - y1
 
 
 def get_contour_approx(contour):
@@ -246,24 +217,12 @@ def map_group_indexes_to_contours(groups, contours):
     list
         List containing lists of contours
     """
-    group_indexes = list()
-    mapped_groups = list()
+    # Flatten and remove duplicate indexes and link any groups containing the
+    # same indexes
+    group_indexes = link_groups([sorted(unique(flatten(i))) for i in groups])
 
-    # Prepare indexes
-    for group in groups:
-        # Get all of the indexes as a 1d array
-        indexes = flatten(group)
-        indexes = unique(indexes)
-        indexes.sort()
-        group_indexes.append(indexes)
-
-    # We need to combine any groups that contains the same indexes
-    group_indexes = link_groups(group_indexes)
-
-    for indexes in group_indexes:
-        # Map the indexes to the contours array
-        mapped_groups.append([contours[i] for i in indexes])
-
+    # Map the indexes to the contours
+    mapped_groups = [[contours[j] for j in i] for i in group_indexes]
     return mapped_groups
 
 
@@ -294,3 +253,22 @@ def largest_contour_group_by_area(groups):
     index = np.argmax(areas)
     largest_group = groups[index]
     return index, largest_group
+
+
+def rect_to_coords(rect):
+    """Returns the cartesian coordinates of a bounding rectangle
+
+    Parameters
+    ----------
+    rect : tuple
+        The bounding rectangle in a tuple in the form (x, y, w, h)
+
+    Returns
+    -------
+    tuple
+        The bounding rectangle in a tuple in the form (x1, y1, x2, y2)
+    """
+    if len(rect) < 4:
+        raise TypeError("Not enough values in rect")
+    x, y, w, h, *_ = rect
+    return x, y, x + w, y + h

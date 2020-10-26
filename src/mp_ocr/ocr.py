@@ -78,7 +78,7 @@ def detect(image, knn, knn_res, out=Path(), debug=False):
 def _preprocess_image(img):
     """Preprocess an image for digits detection
 
-    This function will apply a Gaussian filter, followed by an OTSU
+    This function will apply a Gaussian filter, followed by an Otsu
     binary threshold filter.
 
     Parameters
@@ -134,9 +134,13 @@ def _extract_contours(processed_img, image):
     """
     # Find contours
     logging.debug("Getting contours...")
-    _, contours, _ = cv2.findContours(
+    ret = cv2.findContours(
         processed_img, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
     )
+
+    # findContours return values are different depending on the version of
+    # OpenCV
+    contours = ret[1 if len(ret) == 3 else 0]
 
     logging.debug("No. of contours: %d", len(contours))
 
@@ -166,10 +170,12 @@ def _extract_contours(processed_img, image):
         filtered_contours = stage_action(image, contour_groups)
         end = time.time()
 
+        # Calculate difference in contours
         before_count = sum(map(len, contour_groups))
         after_count = sum(map(len, filtered_contours))
-
         delta = before_count - after_count
+
+        # Calculate time taken
         elapsed = (end - start) * 1000
 
         # Print statistics
@@ -207,9 +213,9 @@ def _crop_contour_groups(image, contour_groups):
 
     # For each contour group, get bounding rectangle of the group and crop
     for contours in contour_groups:
-        x1, y1, w, h = utils.get_contour_group_bounding_rect(contours)
-        x2 = x1 + w
-        y2 = y1 + h
+        x1, y1, x2, y2 = utils.rect_to_coords(
+            utils.get_contour_group_bounding_rect(contours)
+        )
         cropped = img[y1:y2, x1:x2]
         cropped_groups.append(cropped)
 
@@ -286,9 +292,7 @@ def _detect_digits_extract_components(crop):
         coords = cv2.boundingRect(mask)
 
         # Crop the component
-        x1, y1, w, h = coords
-        x2 = x1 + w
-        y2 = y1 + h
+        x1, y1, x2, y2 = utils.rect_to_coords(coords)
         mask = mask[y1:y2, x1:x2]
 
         components.append(mask)
@@ -329,7 +333,9 @@ def _prepare_digit_mask(mask, coords, knn_res):
     border_checks = [border_pad if 255 in line else 0 for line in borders]
 
     # Pad any borders if any pixel touches the edges
-    mask = cv2.copyMakeBorder(mask, *border_checks, cv2.BORDER_CONSTANT, colors.BLACK)
+    mask = cv2.copyMakeBorder(
+        mask, *border_checks, cv2.BORDER_CONSTANT, colors.BLACK
+    )
 
     # Pad both width and height to retain aspect ratio after resizing
     pad_w = (int(knn_w * (h / knn_h)) - w) // 2
@@ -418,10 +424,8 @@ def _write_results_debug(image, processed_img, contour_groups, crops, out):
     # Draw each contour and label them accordingly
     for i, contours in enumerate(contour_groups):
         x, y, w, h = utils.get_contour_group_bounding_rect(contours)
-        w //= 2
-        h //= 2
-        x += w
-        y += h
+        x += w // 2
+        y += h // 2
 
         font = cv2.FONT_HERSHEY_SIMPLEX
 
@@ -512,16 +516,15 @@ def _is_good_contour(contour, height, width, area):
     width_ratio = w / width
 
     # Get contour approximates
-    approx = utils.get_contour_approx(contour)
-    _approx = np.squeeze(approx)
+    approx = np.squeeze(utils.get_contour_approx(contour))
 
     # Edge case where there's only one point
-    if _approx.ndim == 1:
-        _approx = np.array([_approx])
+    if approx.ndim == 1:
+        approx = np.array([approx])
 
     # Extract approximated x and y coordinates
-    x_coords = _approx[:, 0]
-    y_coords = _approx[:, 1]
+    x_coords = approx[:, 0]
+    y_coords = approx[:, 1]
 
     # Dummy condition
     if False:
@@ -574,10 +577,10 @@ def _is_good_contour(contour, height, width, area):
 
     # Filter any contours where they lie on the edges of the image
     elif (
-        any(i in range(0, 5) for i in x_coords)
-        or any(i in range(0, 5) for i in y_coords)
-        or any(i in range(width - 5, width) for i in x_coords)
-        or any(i in range(height - 5, height) for i in y_coords)
+        any(utils.is_around(i, 0, tolerance=5) for i in x_coords)
+        or any(utils.is_around(i, 0, tolerance=5) for i in y_coords)
+        or any(utils.is_around(i, width, tolerance=5) for i in x_coords)
+        or any(utils.is_around(i, height, tolerance=5) for i in y_coords)
     ):
         msg = "contour is on the edge of the image"
 
@@ -607,15 +610,12 @@ def _stage_2_contour_groups_filter(image, contour_groups):
     # hypotenuse
     height = image.height
     width = image.width
-    distance_limit = np.hypot(height, width) // 12
-    logging.debug("Distance limit: %.2f", distance_limit)
+    dist_limit = np.hypot(height, width) // 12
+    logging.debug("Distance limit: %.2f", dist_limit)
 
-    filtered_contour_groups = list()
-    for contours in contour_groups:
-        filtered_contour_groups += _stage_2_contour_group_filter(
-            contours, distance_limit
-        )
-    return filtered_contour_groups
+    return list(itertools.chain(
+        *[_stage_2_contour_group_filter(i, dist_limit) for i in contour_groups]
+    ))
 
 
 def _stage_2_contour_group_filter(contours, distance_limit):
@@ -691,10 +691,8 @@ def _stage_2_contour_group_filter(contours, distance_limit):
     # coordinates. This is an edge case, so we would need to treat each contour
     # as it's own group.
     if len(groups) == 0:
-        for i, j, _ in distances:
-            # We can link each index to itself because they will be trimmed out
-            groups.append([(i, i)])
-            groups.append([(j, j)])
+        # We can link each index to itself because they will be trimmed out
+        groups = [[(i, i), (j, j)] for i, j, _ in angles]
 
     # Convert group indicies to contours
     groups = utils.map_group_indexes_to_contours(groups, contours)
@@ -716,10 +714,9 @@ def _stage_3_contour_groups_filter(image, contour_groups):
     filtered_contour_groups : list
         List containing lists of the remaining, non-filtered contours
     """
-    filtered_contour_groups = list()
-    for contours in contour_groups:
-        filtered_contour_groups += _stage_3_contour_group_filter(contours)
-    return filtered_contour_groups
+    return list(itertools.chain(
+        *[_stage_3_contour_group_filter(i) for i in contour_groups]
+    ))
 
 
 def _stage_3_contour_group_filter(contours):
@@ -791,10 +788,8 @@ def _stage_3_contour_group_filter(contours):
     # coordinates. This is an edge case, so we would need to treat each contour
     # as it's own group.
     if len(groups) == 0:
-        for i, j, _ in angles:
-            # We can link each index to itself because they will be trimmed out
-            groups.append([(i, i)])
-            groups.append([(j, j)])
+        # We can link each index to itself because they will be trimmed out
+        groups = [[(i, i), (j, j)] for i, j, _ in angles]
 
     # Convert group indicies to contours
     groups = utils.map_group_indexes_to_contours(groups, contours)

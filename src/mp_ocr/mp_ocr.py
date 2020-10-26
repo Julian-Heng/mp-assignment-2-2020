@@ -87,7 +87,9 @@ def main(args):
         parent = outfile.parent
 
         if outfile.is_dir():
-            logging.error("Classifier output path '%s' is a directory", outfile)
+            logging.error(
+                "Classifier output path '%s' is a directory", outfile
+            )
             sys.exit(1)
 
         # Setup output directory
