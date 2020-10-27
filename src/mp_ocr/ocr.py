@@ -781,7 +781,7 @@ def _stage_3_contour_group_filter(contours):
     # For each calculated angle
     groups = list()
     for i, j, angle in angles:
-        # Skip if angle is more than the limit
+        # Skip if angle is not within range
         if (
             not utils.is_around(angle, 0, 20)
             and not utils.is_around(angle, 180, 20)
