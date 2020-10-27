@@ -55,7 +55,7 @@ def detect(image, knn, knn_res, out=Path(), debug=False):
 
     # Get largest contour
     i, contours = utils.largest_contour_group_by_area(contour_groups)
-    crop = crops[i]
+    crop = crops[i].copy()
 
     # Resolution spec needs to be reversed and be in a tuple for cv2.resize
     knn_res = tuple(knn_res[::-1])
@@ -257,6 +257,9 @@ def _detect_digits(image, crop, knn, knn_res, out=Path(), debug=False):
     # Begin detecting the different components
     digits = list()
     for i, (mask, coords) in enumerate(zip(components, components_coords)):
+        x1, y1, x2, y2 = utils.rect_to_coords(coords)
+        cv2.rectangle(crop, (x1, y1), (x2, y2), colors.RED, 2)
+
         # Prepare the mask for digit detection
         mask = _prepare_digit_mask(mask, coords, knn_res)
 
