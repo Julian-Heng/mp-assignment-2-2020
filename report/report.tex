@@ -360,7 +360,7 @@ be applied to the top and bottom of the component mask such that the mask will
 have the same aspect ratio as the training images (\code{cv2.copyMakeBorder}).
 
 Finally, the mask is resized to the training image's size (\code{cv2.resize}).
-Using the KNN created in section \nameref{impl-train}, \code{findNearest}, with
+Using the KNN created in section \nameref{impl-train}, \code{findNearest} with
 $k = 1$ is used to predict what the digit is.
 
 Connected components is used to extract the individual digits because connected
