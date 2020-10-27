@@ -12,6 +12,7 @@
 \usepackage[export]{adjustbox}
 \usepackage[hidelinks]{hyperref}
 \usepackage{array}
+\usepackage[numbib,nottoc]{tocbibind}
 \usepackage{caption}
 \usepackage{cite}
 \usepackage{color}
@@ -97,7 +98,9 @@ Digits Extraction And Recognition}}
 
 \pagestyle{fancy}
 
-\fancyhf[HL]{\footnotesize{Machine Perception Assignment - Digits Extraction And Recognition}}
+\fancyhf[HL]{\footnotesize{
+    Machine Perception Assignment - Digits Extraction And Recognition
+}}
 \fancyhf[FC]{\thepage}
 \fancyhf[FL]{\footnotesize{Julian Heng (19473701)}}
 
@@ -147,7 +150,7 @@ using the unmodified binary image to remove any possible noise from the
 threshold. Therefore, we assume that the digit will be the largest component.
 Hence, we extract only the largest component by area.
 
-\foreach \x in {9-7,3-11,2-15}
+\foreach \x in {9-7,3-11}
 {
     \begin{figure}[H]
         \centering{
@@ -169,6 +172,7 @@ order to predict the digits.
 \subsubsection{Classifier Implementation}
 \label{impl-classifier}
 
+\begin{samepage}
 There are a total 6 steps to extract and classify digits in the program's
 implementation:
 
@@ -182,6 +186,7 @@ implementation:
     \item Perform connected components on the crop
     \item Detect and predict the digit on each connected component
 \end{enumerate}
+\end{samepage}
 
 
 \paragraph{Image Preprocessing}
@@ -202,17 +207,18 @@ intensities of the different pixels within the image.
 
 \begin{figure}[H]
     \centering
-    \fbox{\includegraphics[scale=0.9]{{DEBUG_bin_tr06}.jpg}}
+    \fbox{\includegraphics[]{{DEBUG_bin_tr06}.jpg}}
     \caption{An example image after preprocessing is applied}
 \end{figure}
 
 
 \paragraph{Contours Extraction}
 
-Using the preprocessed image from before, the contours is then found using the
-OpenCV \code{findContours} function. Once all of the contours is found, all of
-the contours that are not part of the main digits needs to be removed.
+Using the preprocessed image from the previous step, the contours are then
+extracted (\code{cv2.findContours}). Once all the contours are extracted, all
+of the contours containing noise needs to be filtered.
 
+\begin{samepage}
 In order to extract the contours containing the digits, the program implements
 these 3 stages:
 
@@ -222,10 +228,12 @@ these 3 stages:
     \item Group contours by distance
     \item Group contours by angles
 \end{enumerate}
+\end{samepage}
 
-The first stage involves using the OpenCV functions \code{boundingRect} and
-\code{contourArea} to get the Cartesian coordinates and the contour dimensions
-as well as the area of the contour respectively. We then check that:
+\begin{samepage}
+The first stage finds the bounding box (\code{cv2.boundingRect}) and the area
+(\code{cv2.contourArea}) of the contour. Using these features, we can check
+that:
 
 \begin{enumerate}
     \item The contour's height is more than the width
@@ -236,19 +244,20 @@ as well as the area of the contour respectively. We then check that:
     \item The contour's area to image area is within the threshold
     \item The contour is not along the edges of the image
 \end{enumerate}
+\end{samepage}
 
 If any one of these conditions fails, then the contour is filtered.
 
-The second stage involves grouping the contours by their distances between
-other contours. The main idea behind this stage is that the digits are closer
-to other digits than other contours containing noise. Hence, all of the
+The second stage involves grouping the contours by their shortest distances
+between other contours. The main idea behind this stage is that the digits are
+closer to other digits than other contours containing noise. Hence, all of the
 relevant digit contours will be part of the same group, with all the contours
 containing noise belonging to a different group.
 
 In order to achieve this stage, for each possible contour pairing in the list
 of filtered contours, if the shortest distance is within $\frac{1}{12}$ of the
 image's hypotenuse, then the contour pairing will be grouped together. If
-either contours belongs to another group, the groups will be conjoined.
+either contours belongs to another group, then the groups will be conjoined.
 
 The third stage is very similar to the second stage. Instead of grouping
 contours by distance, the contours will be grouped by the angle of the line
@@ -273,22 +282,22 @@ The inspiration for filtering the contours by size and features comes from this
 StackOverflow answer\cite{impl-1}. Within the post, it is suggested to ``erase
 contours with very small area'' as well as ``erase contours with low aspect
 ratio''. The first stage checks if the contours are within the minimum size
-allowed, as well as the ratio is what we expect the digits to be around.
+allowed, as well as the ratio is what we expect the digits to be around, along
+with filtering any contours close to the edges of the image.
 
-The idea for the second and third stages are ideas that I've come up with and
-implemented fully.
-
+The idea for the second and third stages, as well as the grouping contours, are
+ideas that I've come up with and implemented fully.
 
 \begin{figure}[H]
     \centering
-    \fbox{\includegraphics[scale=0.9]{{DEBUG_contours_tr06}.jpg}}
+    \fbox{\includegraphics[]{{DEBUG_contours_tr06}.jpg}}
     \caption{The contour groups extracted from the image}
 \end{figure}
 
 \begin{figure}[H]
     \centering{
-        \fbox{\includegraphics[scale=0.9]{{DEBUG_cropped_0_tr06}.jpg}}
-        \fbox{\includegraphics[scale=0.9]{{DEBUG_cropped_1_tr06}.jpg}}
+        \fbox{\includegraphics[]{{DEBUG_cropped_0_tr06}.jpg}}
+        \fbox{\includegraphics[]{{DEBUG_cropped_1_tr06}.jpg}}
     }
     \caption{The individually cropped contour groups from the image}
 \end{figure}
@@ -353,6 +362,17 @@ Finally, the mask is resized to the training image's size. Using the KNN
 created in section \nameref{impl-train}, \code{findNearest}, with $k = 1$ is
 used to predict what the digit is.
 
+Connected components is used to extract the individual digits because connected
+components was also used when training the classifier, and is also easy to
+implement the extraction of the mask. Using contours would yield the same
+result, but would require more steps to prepare the contours for prediction.
+
+For example, consider a contour group containing the digit 0. The digit 0
+contains 2 contours, the digit 0 and the hole within the digit 0. The inner
+contour needs to be removed in order to correctly draw the mask containing the
+digit 0. Determining if a contour is within another contour has a time
+complexity of $O(n^2)$. Hence, it is much rather prefered to use conntected
+components to extract the digit masks for prediction.
 
 \begin{figure}[H]
     \centering{
@@ -429,8 +449,6 @@ as correctly classify each digit. It is important to note, however, that while
 this program is able correctly predict these images, it is not guaranteed to be
 able to extract and detect digits with 100\% accuracy.
 
-
-\subsection{References}
 
 \bibliographystyle{plainurl}
 \bibliography{report.bib}
