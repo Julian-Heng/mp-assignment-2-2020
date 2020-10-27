@@ -7,18 +7,23 @@ main()
     shopt -s nullglob
     files=("task.sh" "src"/**/*.py)
 
-    if [[ ! -e "report/report.pdf" ]]; then
+    report_fname="heng_julian_19473701_mp_assignment_2_report.pdf"
+    report="report/${report_fname}"
+    if [[ ! -e "${report}" ]]; then
         (
             cd report
-            pdflatex report.tex
+            bash ./gen_figures.sh
+            bash ./make_report.sh
         )
-   fi
+    fi
 
-    if [[ ! -e "report/report.pdf" ]]; then
+    if [[ ! -e "${report}" ]]; then
         exit 1
     fi
 
-    files+=("report/report.pdf")
+    cp "${report}" "${report_fname}"
+
+    files+=("${report_fname}")
     zip "heng_julian_19473701.zip" "${files[@]}"
 }
 
