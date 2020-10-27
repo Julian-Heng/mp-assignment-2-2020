@@ -148,7 +148,7 @@ The preprocessing performs an Otsu binary threshold (\code{cv2.threshold})
 before connected components is applied. Connected components is used instead of
 using the unmodified binary image to remove any possible noise from the
 threshold. Therefore, we assume that the digit will be the largest component.
-Hence, we extract only the largest component by area.
+Hence, we extract the component with the largest area.
 
 \foreach \x in {9-7,3-11}
 {
@@ -356,11 +356,11 @@ For each individual component mask, detect if there are any pixels that are on
 the edge of the component. If there are, then a single pixel black border is
 applied on the edge containing that pixel. Then, more additional padding will
 be applied to the top and bottom of the component mask such that the mask will
-have the same aspect ratio as the training images.
+have the same aspect ratio as the training images (\code{cv2.copyMakeBorder}).
 
-Finally, the mask is resized to the training image's size. Using the KNN
-created in section \nameref{impl-train}, \code{findNearest}, with $k = 1$ is
-used to predict what the digit is.
+Finally, the mask is resized to the training image's size (\code{cv2.resize}).
+Using the KNN created in section \nameref{impl-train}, \code{findNearest}, with
+$k = 1$ is used to predict what the digit is.
 
 Connected components is used to extract the individual digits because connected
 components was also used when training the classifier, and is also easy to
