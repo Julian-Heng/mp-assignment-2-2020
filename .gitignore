@@ -1,0 +1,13 @@
+.venv/
+*.swp
+
+__pycache__
+
+report.pdf
+src/*.jpg
+src/*.png
+src/*.npz
+src/*.txt
+*.zip
+report/*
+!report/report.tex
